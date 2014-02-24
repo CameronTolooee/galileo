@@ -1,0 +1,57 @@
+#!/usr/bin/env bash
+################################################################################
+# galileo-cluster - manage a Galileo cluster
+#
+# This script is a simple wrapper around galileo-node.  Valid flags passed to
+# this script are simply passed on to galileo-node processes on the cluster.
+################################################################################
+
+colorize=""
+ssh_opts=""
+if [[ -n "${GALILEO_SSH_OPTS}" ]]; then
+    ssh_opts="${GALILEO_SSH_OPTS}"
+fi
+
+print_usage() {
+cat <<- EOM
+Usage: $(basename ${0}) [-cf] [command]
+
+Commands:
+    start (default) - starts the cluster
+    stop - clean cluster shutdown
+    restart - performs the 'stop' and then 'start' commands
+    status - print the current status of the cluster
+
+Options:
+    -c colorize output
+    -f forceful shutdown (SIGKILL)
+
+The GALILEO_SSH_OPTS environment variable adds options to the ssh command line
+for non-standard ssh configurations.
+EOM
+}
+
+while getopts "cf" flag; do
+    case ${flag} in
+        c) colorize="-c" ;;
+        f) ;;
+        ?) print_usage; exit 1;
+    esac
+done
+
+source "$(cd "$(dirname "$0")" && pwd)/galileo-environment"
+
+groups=$(ls "${GALILEO_CONF}"/network/*.group 2> /dev/null)
+if [[ $? -ne 0 ]]; then
+    echo "Error: group configuration files not found!"
+    echo "Please ensure \${GALILEO_CONF}/network is populated with group files."
+    exit 1
+fi
+
+for group in ${groups}; do
+    # Remove whitespace, empty lines, and everything after the colon character
+    sed 's/[\t ]//g; /^$/d; s/\(.*\):.*/\1/g' "${group}" | \
+        "${GALILEO_HOME}"/bin/dssh -pq ${colorize} -o "${ssh_opts}" \
+        '${GALILEO_HOME}/bin/galileo-node '"${@}" &
+done
+wait
