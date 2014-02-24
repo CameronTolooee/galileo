@@ -99,7 +99,6 @@ public class StoreNOAA {
 
 		StoreNOAA client = new StoreNOAA();
 		File dir = new File(args[2]);
-		System.out.println(args[2]);
 		NetworkDestination server = client.connect(serverHostName, serverPort);
 		for (File f : dir.listFiles()) {
 			Pair<String, String> nameParts = FileNames.splitExtension(f);
