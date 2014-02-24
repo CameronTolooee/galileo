@@ -199,12 +199,12 @@ public class TextClient implements MessageListener {
 
         TextClient client = new TextClient();
         NetworkDestination server = client.connect(serverHostName, serverPort);
-        //NetworkDestination server2 = client.connect("lattice-22", serverPort);
-        //NetworkDestination server3 = client.connect("lattice-22", 5555);
         System.out.println("sending");
 
         Block block = client.generateData();
         client.store(server, block);
-
+        
+        /* See galileo.test.graph.QueryTest for query example */
+        
     }
 }

@@ -1,5 +1,5 @@
 /*
-Copyright (c) 2013, Colorado State University
+Copyright (c) 2014, Colorado State University
 All rights reserved.
 
 Redistribution and use in source and binary forms, with or without modification,
@@ -28,37 +28,15 @@ package galileo.client;
 import java.io.File;
 import java.io.IOException;
 import java.net.UnknownHostException;
-import java.util.ArrayList;
-import java.util.Calendar;
-import java.util.List;
 import java.util.Map;
-import java.util.Random;
 
-import galileo.comm.Disconnection;
-import galileo.comm.QueryRequest;
-import galileo.comm.QueryResponse;
 import galileo.comm.StorageRequest;
 import galileo.dataset.Block;
-import galileo.dataset.BlockMetadata;
-import galileo.dataset.Device;
-import galileo.dataset.DeviceSet;
-import galileo.dataset.FileBlock;
 import galileo.dataset.Metadata;
-import galileo.dataset.SpatialProperties;
-import galileo.dataset.TemporalProperties;
-import galileo.dataset.feature.Feature;
-import galileo.dataset.feature.FeatureSet;
-import galileo.event.EventContainer;
-import galileo.event.EventType;
 import galileo.net.ClientMessageRouter;
-import galileo.net.GalileoMessage;
-import galileo.net.MessageListener;
 import galileo.net.NetworkDestination;
-import galileo.query.Query;
 import galileo.samples.ConvertNetCDF;
-import galileo.serialization.Serializer;
 import galileo.util.FileNames;
-import galileo.util.GeoHash;
 import galileo.util.Pair;
 import galileo.util.ProgressBar;
 
@@ -89,7 +67,7 @@ public class StoreNOAA {
 
 	public static void main(String[] args) throws Exception {
 		if (args.length != 3) {
-			System.out.println("Usage: galileo.client.TextClient "
+			System.out.println("Usage: galileo.client.StoreNOAA "
 					+ "<server-hostname> <server-port> <directory-name>");
 			return;
 		}
@@ -100,13 +78,18 @@ public class StoreNOAA {
 		StoreNOAA client = new StoreNOAA();
 		File dir = new File(args[2]);
 		NetworkDestination server = client.connect(serverHostName, serverPort);
+		
+		/* Store each grb file in the top-dir */
 		for (File f : dir.listFiles()) {
+			try {
 			Pair<String, String> nameParts = FileNames.splitExtension(f);
 			String ext = nameParts.b;
 			if (ext.equals("grb") || ext.equals("bz2") || ext.equals("gz")) {
 				
-				if(!f.getName().endsWith("_000.grb.bz2"))
+				/* Don't waste time parsing files that MetadataGraph is not configured for */ 
+				if(!f.getName().endsWith("_000.grb.bz2")) {
 						continue;
+				}
 				
 				System.out.println("Parsing: "+ f.getName());
 				Map<String, Metadata> metas = ConvertNetCDF.readFile(f.getAbsolutePath());
@@ -115,11 +98,22 @@ public class StoreNOAA {
 				ProgressBar pb = new ProgressBar(metas.size(), f.getName());
 				for (Map.Entry<String, Metadata> entry : metas.entrySet()) {
 					pb.setVal(cntr++);
+					try {
 					client.store(server, ConvertNetCDF.createBlock("", entry.getValue()));
+					} catch (Exception e){
+						System.out.println("Error uploading file: " + f.getName());
+						e.printStackTrace();
+						continue;
+					}
 				}
 				pb.finish();
 			}
+			} catch ( Exception e){
+				System.out.println("Error processing file: "+f.getName());
+				e.printStackTrace();
+			}
 		}
-		System.out.println("Completed Directory");
+		/* Hangs here so print message to denote completion TODO: fix it!*/
+		System.out.println("Completed upload");
 	}
 }
