@@ -153,10 +153,11 @@ public class Serializer {
      */
     public static void persist(ByteSerializable obj, File file)
     throws IOException {
-        FileOutputStream fos = new FileOutputStream(file);
-        byte[] objBytes = serialize(obj);
-        fos.write(objBytes);
-        fos.close();
+        FileOutputStream fOs = new FileOutputStream(file);
+        BufferedOutputStream bOs = new BufferedOutputStream(fOs);
+        SerializationOutputStream sOs = new SerializationOutputStream(bOs);
+        sOs.writeSerializable(obj);
+        sOs.close();
     }
 
     /**
@@ -185,11 +186,12 @@ public class Serializer {
     public static <T extends ByteSerializable> T restore(Class<T> type,
             File inFile)
     throws IOException, SerializationException {
-        FileInputStream fin = new FileInputStream(inFile);
-        byte[] objBytes = new byte[(int) inFile.length()];
-        fin.read(objBytes);
-        fin.close();
-        T obj = deserialize(type, objBytes);
+        FileInputStream fIn = new FileInputStream(inFile);
+        BufferedInputStream bIn = new BufferedInputStream(fIn);
+        SerializationInputStream sIn = new SerializationInputStream(bIn);
+        T obj = deserializeFromStream(type, sIn);
+        sIn.close();
+
         return obj;
     }
 

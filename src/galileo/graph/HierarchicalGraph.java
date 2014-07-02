@@ -25,26 +25,24 @@ software, even if advised of the possibility of such damage.
 
 package galileo.graph;
 
-import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
+
+import java.util.Iterator;
 import java.util.LinkedList;
 import java.util.List;
-
 import java.util.logging.Logger;
-
 import java.util.Map;
 import java.util.Queue;
 import java.util.Set;
 
 import galileo.dataset.feature.Feature;
 import galileo.dataset.feature.FeatureType;
-
 import galileo.query.Expression;
 import galileo.query.Operation;
-import galileo.query.Operator;
+import galileo.query.PayloadFilter;
 import galileo.query.Query;
 import galileo.util.Pair;
 
@@ -116,9 +114,24 @@ public class HierarchicalGraph<T> {
         return paths;
     }
 
+    public List<Path<Feature, T>> evaluateQuery(
+            Query query, PayloadFilter<T> filter) {
+
+        List<Path<Feature, T>> paths = evaluateQuery(query);
+        Iterator<Path<Feature, T>> it = paths.iterator();
+        while (it.hasNext()) {
+            Path<Feature, T> path = it.next();
+            boolean empty = applyPayloadFilter(path, filter);
+            if (empty) {
+                it.remove();
+            }
+        }
+
+        return paths;
+    }
+
     public void evaluateOperation(Operation operation,
             HierarchicalQueryTracker<T> tracker) {
-
 
         for (String feature : features) {
             tracker.nextLevel();
@@ -147,19 +160,89 @@ public class HierarchicalGraph<T> {
         }
     }
 
+    /**
+     * Evaluate query {@link Expression}s at a particular vertex.  Neighboring
+     * vertices that match the Expression will be traversed further.
+     *
+     * @param expressions List of {@link Expression}s that should be evaluated
+     * against neighboring nodes
+     * @param vertex {@link Vertex} to apply the Expression to.
+     *
+     * @return a collection of matching vertices.
+     */
     private Collection<Vertex<Feature, T>> evaluateExpressions(
             List<Expression> expressions, Vertex<Feature, T> vertex) {
 
-        Set<Vertex<Feature, T>> resultSet
-            = new HashSet<>(vertex.getAllNeighbors());
+        Set<Vertex<Feature, T>> resultSet = null;
+        boolean firstResult = true;
 
         for (Expression expression : expressions) {
-            if (expression.getOperator() == Operator.EQUAL) {
-                Vertex<Feature, T> neighbor
-                    = vertex.getNeighbor(expression.getValue());
-                Set<Vertex<Feature, T>> neighborSet = new HashSet<>();
-                neighborSet.add(neighbor);
-                resultSet.retainAll(neighborSet);
+            Set<Vertex<Feature, T>> evalSet = new HashSet<>();
+            Feature value = expression.getValue();
+
+            switch (expression.getOperator()) {
+                case EQUAL:
+                    /* Select a particular neighboring vertex */
+                    Vertex<Feature, T> equalTo = vertex.getNeighbor(value);
+
+                    if (equalTo == null) {
+                        /* There was no Vertex that matched the value given. */
+                        break;
+                    }
+
+                    evalSet.add(equalTo);
+                    break;
+
+                case NOTEQUAL:
+                    /* Add all the neighboring vertices, and then remove the
+                     * particular value specified. */
+                    evalSet.addAll(vertex.getAllNeighbors());
+                    evalSet.remove(vertex.getNeighbor(value));
+                    break;
+
+                case LESS:
+                    evalSet.addAll(
+                            vertex.getNeighborsLessThan(value, false)
+                            .values());
+                    break;
+
+                case LESSEQUAL:
+                    evalSet.addAll(
+                            vertex.getNeighborsLessThan(value, true)
+                            .values());
+                    break;
+
+                case GREATER:
+                    evalSet.addAll(
+                            vertex.getNeighborsGreaterThan(value, false)
+                            .values());
+                    break;
+
+                case GREATEREQUAL:
+                    evalSet.addAll(
+                            vertex.getNeighborsGreaterThan(value, true)
+                            .values());
+                    break;
+
+                case UNKNOWN:
+                default:
+                    logger.log(java.util.logging.Level.WARNING,
+                            "Invalid operator ({0}) in expression: {1}",
+                            new Object[] {
+                                expression.getOperator(),
+                                expression.toString()} );
+            }
+
+            if (firstResult) {
+                /* If this is the first Expression we've evaluated, then the
+                 * evaluation set becomes our result set that will be further
+                 * reduced as more Expressions are evaluated. */
+                resultSet = evalSet;
+            } else {
+                /* Remove all items from the result set that are not present in
+                 * this current evaluation set.  This effectively drills down
+                 * through the results until we have our final query answer. */
+                resultSet.retainAll(evalSet);
             }
         }
 
@@ -286,18 +369,28 @@ public class HierarchicalGraph<T> {
      * @param path Path to remove null Features from.
      */
     private void removeNullFeatures(Path<Feature, T> path) {
-        List<Vertex<Feature, T>> removals = new ArrayList<>();
-
-        for (Vertex<Feature, T> v : path) {
-            Feature f = v.getLabel();
+        Iterator<Vertex<Feature, T>> it = path.iterator();
+        while (it.hasNext()) {
+            Feature f = it.next().getLabel();
             if (f == null || f.getType() == FeatureType.NULL) {
-                removals.add(v);
+                it.remove();
+            }
             }
         }
 
-        for (Vertex<Feature, T> v : removals) {
-            path.remove(v);
+    private boolean applyPayloadFilter(Path<Feature, T> path,
+            PayloadFilter<T> filter) {
+
+        Set<T> payload = path.getPayload();
+        if (filter.excludesItems() == false) {
+            /* We only include the items in the filter */
+            payload.retainAll(filter.getItems());
+        } else {
+            /* Excludes anything in the filter */
+            payload.removeAll(filter.getItems());
         }
+
+        return payload.isEmpty();
     }
 
     /**

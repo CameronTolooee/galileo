@@ -25,21 +25,17 @@ software, even if advised of the possibility of such damage.
 
 package galileo.net;
 
-import java.io.IOException;
-
-import galileo.serialization.ByteSerializable;
-import galileo.serialization.SerializationInputStream;
-import galileo.serialization.SerializationOutputStream;
+import java.nio.channels.SocketChannel;
 
 /**
  * Represents a TCP network endpoint; a host/port pair.
  *
  * @author malensek
  */
-public class NetworkDestination implements ByteSerializable {
+public class NetworkDestination {
 
-    private String hostname;
-    private int port;
+    protected String hostname;
+    protected int port;
 
     public NetworkDestination(String hostname, int port) {
         this.hostname = hostname;
@@ -91,17 +87,12 @@ public class NetworkDestination implements ByteSerializable {
         return stringRepresentation();
     }
 
-    @Deserialize
-    public NetworkDestination(SerializationInputStream in)
-    throws IOException {
-        hostname = in.readString();
-        port = in.readInt();
+    /**
+     * Retrieves host:port information from a SocketChannel and instantiates a
+     * new NetworkDestination with the information.
+     */
+    public static NetworkDestination fromSocketChannel(SocketChannel channel) {
+        return MessageRouter.getDestination(channel);
     }
 
-    @Override
-    public void serialize(SerializationOutputStream out)
-    throws IOException {
-        out.writeString(hostname);
-        out.writeInt(port);
-    }
 }

@@ -25,25 +25,21 @@ software, even if advised of the possibility of such damage.
 
 package galileo.net;
 
-import galileo.client.EventPublisher;
-import galileo.comm.Disconnection;
-
 import java.io.IOException;
-
 import java.net.InetSocketAddress;
-
+import java.nio.ByteBuffer;
 import java.nio.channels.ClosedChannelException;
 import java.nio.channels.SelectionKey;
 import java.nio.channels.Selector;
 import java.nio.channels.SocketChannel;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.BlockingQueue;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.LinkedBlockingQueue;
-import java.util.logging.Level;
+import java.util.Queue;
+import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.logging.Logger;
 
 /**
  * Provides client-side message routing capabilities. This includes connecting
@@ -53,15 +49,17 @@ import java.util.logging.Level;
  */
 public class ClientMessageRouter extends MessageRouter {
 
-    protected Map<SocketChannel, NetworkDestination> connections
+    protected static final Logger logger = Logger.getLogger("galileo");
+
+    protected Map<NetworkDestination, SocketChannel> destinationToSocket
         = new HashMap<>();
-    protected Map<NetworkDestination, SocketChannel> connectedHosts
+    protected Map<SocketChannel, NetworkDestination> socketToDestination
+        = new HashMap<>();
+    protected Map<SocketChannel, TransmissionTracker> socketToTracker
         = new HashMap<>();
 
-    protected BlockingQueue<SocketChannel> pendingRegistrations
-        = new LinkedBlockingQueue<>();
-    protected Map<SocketChannel, BlockingQueue<SelectionKey>> waitingKeys
-        = new ConcurrentHashMap<>();
+    protected Queue<SocketChannel> pendingRegistrations
+        = new ConcurrentLinkedQueue<>();
 
     public ClientMessageRouter()
     throws IOException {
@@ -83,66 +81,12 @@ public class ClientMessageRouter extends MessageRouter {
         selectorThread.start();
     }
 
-    /**
-     * Connects to a server.
-     *
-     * @param hostname name of the host to connect to
-     * @param port port on the destination host to connect to
-     */
-    public NetworkDestination connectTo(String hostname, int port)
-    throws IOException {
-        return connectTo(new NetworkDestination(hostname, port));
-    }
- 
-    /**
-     * Connects to a server at the specified network destination.
-     *
-     * @param destination NetworkDestination to connect to.
-     */
-    public NetworkDestination connectTo(NetworkDestination destination)
-    throws IOException {
-        if (connectedHosts.containsKey(destination)) {
-            return destination;
-        }
-
-        SocketChannel channel = SocketChannel.open();
-        channel.configureBlocking(false);
-        InetSocketAddress address = new InetSocketAddress(
-                destination.getHostname(), destination.getPort());
-        channel.connect(address);
-
-        pendingRegistrations.offer(channel);
-        waitingKeys.put(channel, new LinkedBlockingQueue<SelectionKey>());
-        connectedHosts.put(destination, channel);
-        connections.put(channel, destination);
-        return destination;
-    }
-
-    /**
-     * Handles pending registration operations on the Selector thread.
-     */
-    private void processPendingRegistrations()
-    throws ClosedChannelException {
-        if (pendingRegistrations.size() == 0) {
-            return;
-        }
-
-        List<SocketChannel> registrations = new ArrayList<>();
-        pendingRegistrations.drainTo(registrations);
-
-        for (SocketChannel channel : registrations) {
-            TransmissionTracker tracker
-                = new TransmissionTracker(writeQueueSize);
-
-            channel.register(selector, SelectionKey.OP_CONNECT, tracker);
-        }
-    }
-
     @Override
     public void run() {
         while (online) {
             try {
                 processPendingRegistrations();
+                updateInterestOps();
                 processSelectionKeys();
             } catch (IOException e) {
                 e.printStackTrace();
@@ -150,93 +94,172 @@ public class ClientMessageRouter extends MessageRouter {
         }
     }
 
+    /**
+     * Handles pending registration operations on the Selector thread.
+     */
+    private void processPendingRegistrations()
+    throws ClosedChannelException {
+        Iterator<SocketChannel> it = pendingRegistrations.iterator();
+        while (it.hasNext() == true) {
+            SocketChannel channel = it.next();
+            it.remove();
+
+            TransmissionTracker tracker = socketToTracker.get(channel);
+            channel.register(selector, SelectionKey.OP_CONNECT, tracker);
+        }
+    }
+ 
+    /**
+     * Ensures that a particular {@link NetworkDestination} has been connected
+     * to, and retrieves its relevant {@link TransmissionTracker} instance.
+     *
+     * @param destination The NetworkDestination to ensure this MessageRouter is
+     * connected to
+     *
+     * @return The TransmissionTracker associated with the NetworkDestination.
+     */
+    private TransmissionTracker ensureConnected(NetworkDestination destination)
+    throws IOException {
+        SocketChannel channel = destinationToSocket.get(destination);
+        if (channel != null) {
+            return socketToTracker.get(channel);
+        }
+
+        channel = SocketChannel.open();
+        channel.configureBlocking(false);
+        InetSocketAddress address = new InetSocketAddress(
+                destination.getHostname(), destination.getPort());
+        channel.connect(address);
+
+        /* Update data structures for mapping between sockets/keys/trackers */
+        destinationToSocket.put(destination, channel);
+        socketToDestination.put(channel, destination);
+        TransmissionTracker tracker = new TransmissionTracker(writeQueueSize);
+        socketToTracker.put(channel, tracker);
+
+        /* Finally, put this registration in the pending queue */
+        pendingRegistrations.add(channel);
+
+        return tracker;
+    }
+
+    /**
+     * Sends a message to multiple network destinations.
+     */
+    public List<Transmission> broadcastMessage(
+            Iterable<NetworkDestination> destinations, GalileoMessage message)
+    throws IOException {
+        List<Transmission> transmissions = new ArrayList<>();
+        for (NetworkDestination destination : destinations) {
+            Transmission trans = sendMessage(destination, message);
+            transmissions.add(trans);
+        }
+        return transmissions;
+        }
+
+    /**
+     * Sends a message to the specified network destination.  Connections are
+     * completed during the first send operation.
+     */
+    public Transmission sendMessage(NetworkDestination destination,
+            GalileoMessage message)
+    throws IOException {
+
+        /* Make sure this destination has been connected.  If not, this kicks
+         * off the connection process. */
+        TransmissionTracker tracker = ensureConnected(destination);
+
+        /* Queue the data to be written */
+        Transmission trans = null;
+        ByteBuffer payload = wrapWithPrefix(message);
+            try {
+            trans = tracker.queueOutgoingData(payload);
+        } catch (InterruptedException e) {
+                e.printStackTrace();
+            }
+
+        /* Request for interestOps change. */
+        SocketChannel channel = destinationToSocket.get(destination);
+        if (channel.isRegistered() && channel.isConnected()) {
+            changeInterest.put(channel.keyFor(this.selector),
+                    SelectionKey.OP_READ | SelectionKey.OP_WRITE);
+        }
+
+        selector.wakeup();
+        return trans;
+    }
+
     @Override
-    protected void connect(SelectionKey key) {
-        super.connect(key);
-        waitingKeys.get((SocketChannel) key.channel()).offer(key);
+    protected void disconnect(SelectionKey key) {
+        /* Update our ClientMessageRouter-specific data structures when
+         * disconnected. */
+        SocketChannel channel = (SocketChannel) key.channel();
+        NetworkDestination destination = socketToDestination.get(channel);
+        destinationToSocket.remove(destination);
+        socketToDestination.remove(channel);
+        socketToTracker.remove(channel);
+        super.disconnect(key);
+    }
+
+    /**
+     * Forcibly shuts down the message processor and disconnects from any
+     * connected server(s).  If pending writes have been queued, they will be
+     * discarded.
+     */
+    public void forceShutdown() {
+        shutdown(true);
+    }
+
+    /**
+     * Shuts down the message processor and disconnects from the server(s).  If
+     * pending writes have been queued, this method will block until the queue
+     * is empty.
+     */
+    public void shutdown() {
+        shutdown(false);
     }
 
     /**
      * Shuts down the message processor and disconnects from the server(s).
+     *
+     * @param forcible Whether or not to forcibly shut down (discard queued
+     * messages).
      */
-    public void shutdown() {
-        for (SocketChannel channel : connectedHosts.values()) {
-            SelectionKey key = channel.keyFor(this.selector);
+    private void shutdown(boolean forcible) {
+        for (SocketChannel channel : destinationToSocket.values()) {
+        SelectionKey key = channel.keyFor(this.selector);
+
+            /* If this is not a forcible shutdown, then we need to check each
+             * TransmissionTracker's pending write queue, and make sure the
+             * items in the queues get sent before shutdown happens. */
+            if (forcible == false) {
+                safeShutdown(key);
+                }
+
             if (key != null) {
                 disconnect(key);
+                }
             }
-        }
         this.online = false;
         selector.wakeup();
     }
 
     /**
-     * Broadcasts a message to the connected servers.
-     */
-    public void broadcastMessage(GalileoMessage message)
-    throws IOException {
-        for (SocketChannel channel : connectedHosts.values()) {
-            sendMessage(channel.keyFor(this.selector), message);
-        }
-    }
-
-    /**
-     * Sends a message to the specified network destination.  Connections are
-     * completed lazily during the first send operation.
-     */
-    public void sendMessage(NetworkDestination destination,
-            GalileoMessage message)
-    throws IOException {
-
-        SocketChannel channel = connectedHosts.get(destination);
-        SelectionKey key = channel.keyFor(this.selector);
-        if (key == null) {
-            if (!pendingRegistrations.contains(channel)) {
-                throw new IOException("Not connected to destination: "
-                        + destination);
-            } else {
-                this.selector.wakeup();
-
-                try {
-                    key = waitingKeys.get(channel).take();
-                } catch (InterruptedException e) {
-                    Thread.currentThread().interrupt();
-                    throw new IOException("Sender thread interrupted.");
-                }
-
-                if (!key.isValid()) {
-                    throw new IOException("Connection refused.");
-                }
-            }
-        }
-
-        sendMessage(key, message);
-    }
-
-    /**
-     * Inform subscribed MessageListener instances that the connection to the
-     * remote server has been terminated.
+     * This method checks a given SelectionKey's write queue for pending
+     * writes, and then does a series of sleep-checks until the queue is empty.
      *
-     * @param key SelectionKey for the SocketChannel that was disconnected.
+     * @param key SelectionKey to monitor for pending writes.
      */
-    @Override
-    protected void disconnect(SelectionKey key) {
-        super.disconnect(key);
-        SocketChannel channel = (SocketChannel) key.channel();
-        NetworkDestination destination = connections.get(channel);
-
-        Disconnection disconnect = new Disconnection(destination);
-
-        GalileoMessage message = null;
+    private void safeShutdown(SelectionKey key) {
+        TransmissionTracker tracker = TransmissionTracker.fromKey(key);
+        Iterator<Transmission> it = tracker.pendingTransmissionIterator();
+        while (it.hasNext()) {
+            Transmission t = it.next();
         try {
-            message = EventPublisher.wrapEvent(disconnect);
-        } catch (IOException e) {
-            logger.log(Level.WARNING, "Could not create Disconnect event.", e);
+                t.finish();
+            } catch (InterruptedException e) {
+                logger.warning("Interrupted during safe shutdown");
         }
-
-        connectedHosts.remove(destination);
-        connections.remove(channel);
-
-        super.dispatchMessage(message);
+        }
     }
 }

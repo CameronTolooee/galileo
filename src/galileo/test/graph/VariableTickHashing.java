@@ -35,19 +35,24 @@ import org.junit.Test;
 public class VariableTickHashing {
 
     @Test
-    public void testBasic() {
+    public void testZeroToFiftyRange() {
         TickHash t = new TickHash();
         t.addTick(new Feature("temperature", 0.0));
         t.addTick(new Feature("temperature", 10.0));
         t.addTick(new Feature("temperature", 20.0));
         t.addTick(new Feature("temperature", 30.0));
         t.addTick(new Feature("temperature", 50.0));
-
-        System.out.println(t.getBucket(new Feature("temperature", 33.0)));
-        System.out.println(t.getBucket(new Feature("temperature", 99.0)));
-        System.out.println(t.getBucket(new Feature("temperature", -42.0)));
-
+        System.out.println("TickHash contents:");
         System.out.println(t);
+
+        Feature f1 = t.getBucket(new Feature("temperature", 33.0));
+        Feature f2 = t.getBucket(new Feature("temperature", 99.0));
+        Feature f3 = t.getBucket(new Feature("temperature", -42.0));
+
+        assertEquals("30 group", new Feature("temperature", 30.0), f1);
+        assertEquals("50 group", new Feature("temperature", 50.0), f2);
+        assertEquals("0 group", new Feature("temperature", 0.0), f3);
+
     }
 
 

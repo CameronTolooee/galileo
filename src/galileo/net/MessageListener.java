@@ -25,13 +25,37 @@ software, even if advised of the possibility of such damage.
 
 package galileo.net;
 
+/**
+ * Interface for classes that will listen for incoming {@link GalileoMessage}
+ * instances produced by a {@link MessageRouter}.
+ *
+ * @author malensek
+ */
 public interface MessageListener {
 
     /**
-     * Called when a message is ready to be processed.
+     * Called when a message is ready to be processed.  This method is invoked
+     * by a Selector thread (from a {@link MessageRouter} instance).  To avoid
+     * hurting performance, the implementation of onMessage must be lightweight.
+     * <p>
+     * An example use case could involve placing incoming messages in a blocking
+     * queue and then having another thread process them.  If the queue gets too
+     * full, then it may be appropriate to block here (thus blocking the
+     * Selector thread) to slow the rate of incoming messages from the network.
      *
      * @param message GalileoMessage that was received; null if the connection
      * has been terminated.
      */
     public void onMessage(GalileoMessage message);
+
+    /**
+     * Called when a connection is established with a remote endpoint.
+     */
+    public void onConnect(NetworkDestination endpoint);
+
+    /**
+     * Called when the MessageListener has been disconnected from a remote
+     * endpoint.
+     */
+    public void onDisconnect(NetworkDestination endpoint);
 }

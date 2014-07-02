@@ -27,6 +27,8 @@ package galileo.graph;
 
 import galileo.dataset.feature.Feature;
 import galileo.dataset.feature.FeatureType;
+
+import galileo.query.PayloadFilter;
 import galileo.query.Query;
 import galileo.serialization.ByteSerializable;
 import galileo.serialization.SerializationException;
@@ -73,18 +75,30 @@ public class MetadataGraph implements ByteSerializable {
         }
     }
 
-    public MetadataGraph evaluateQuery(Query query) {
-        List<Path<Feature, String>> paths = graph.evaluateQuery(query);
-        MetadataGraph resultGraph = new MetadataGraph();
+    public List<Path<Feature, String>> evaluateQuery(Query query) {
+        return graph.evaluateQuery(query);
+    }
+
+    public List<Path<Feature, String>> evaluateQuery(Query query,
+            PayloadFilter<String> filter) {
+        return graph.evaluateQuery(query, filter);
+    }
+
+    public static MetadataGraph fromPaths(List<Path<Feature, String>> paths) {
+        MetadataGraph m = new MetadataGraph();
         for (Path<Feature, String> path : paths) {
-            //TODO
             try {
-            resultGraph.addPath(path);
+                m.addPath(path);
             } catch (Exception e) {
+                //TODO log this? throw?
                 e.printStackTrace();
             }
         }
-        return resultGraph;
+        return m;
+    }
+
+    public List<Path<Feature, String>> getAllPaths() {
+        return graph.getAllPaths();
     }
 
     public long numVertices() {

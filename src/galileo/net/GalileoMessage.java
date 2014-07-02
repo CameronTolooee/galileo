@@ -25,13 +25,7 @@ software, even if advised of the possibility of such damage.
 
 package galileo.net;
 
-import java.io.IOException;
-
 import java.nio.channels.SelectionKey;
-
-import galileo.serialization.ByteSerializable;
-import galileo.serialization.SerializationInputStream;
-import galileo.serialization.SerializationOutputStream;
 
 /**
  * The unit of data transmission in the Galileo DHT.  These packets are simple
@@ -39,11 +33,12 @@ import galileo.serialization.SerializationOutputStream;
  *
  * @author malensek
  */
-public class GalileoMessage implements ByteSerializable {
+public class GalileoMessage {
 
     private byte[] payload;
 
-    public SelectionKey key;
+    private MessageContext context;
+    private SelectionKey key;
 
     /**
      * Constructs a GalileoMessage from an array of bytes.
@@ -61,9 +56,23 @@ public class GalileoMessage implements ByteSerializable {
      * @param payload message payload in the form of a byte array.
      * @param key SelectionKey of the message source.
      */
+    @Deprecated
     public GalileoMessage(byte[] payload, SelectionKey key) {
-        this.payload = payload;
+        this(payload);
         this.key = key;
+    }
+
+    /**
+     * Constructs a GalileoMessage from an array of bytes with an associated
+     * {@link MessageContext} representing the source of the message.
+     *
+     * @param payload message payload in the form of a byte array.
+     * @param context context information for this message
+     */
+    public GalileoMessage(byte[] payload, MessageContext context) {
+        this(payload);
+        this.context = context;
+        this.key = context.getSelectionKey();
     }
 
     /**
@@ -75,24 +84,12 @@ public class GalileoMessage implements ByteSerializable {
         return payload;
     }
 
+    public MessageContext getContext() {
+        return context;
+    }
+
+    @Deprecated
     public SelectionKey getSelectionKey() {
         return key;
-    }
-
-    /**
-     * Constructs a new GalileoMessage from a serialization stream.
-     */
-    public GalileoMessage(SerializationInputStream in)
-    throws IOException {
-        int dataSize = in.readInt();
-        payload = new byte[dataSize];
-        in.read(payload);
-    }
-
-    @Override
-    public void serialize(SerializationOutputStream out)
-    throws IOException {
-        out.writeInt(payload.length);
-        out.write(payload);
     }
 }

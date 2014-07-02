@@ -1,5 +1,5 @@
 /*
-Copyright (c) 2013, Colorado State University
+Copyright (c) 2014, Colorado State University
 All rights reserved.
 
 Redistribution and use in source and binary forms, with or without modification,
@@ -23,15 +23,28 @@ any theory of liability, whether in contract, strict liability, or tort
 software, even if advised of the possibility of such damage.
 */
 
-package galileo.event;
+package galileo.bmp;
 
-public interface EventListener {
+public class BitmapException extends Exception {
 
-    /**
-     * Called when an event is ready to be processed.
-     *
-     * @param event GalileoEvent that was received; null if the connection has
-     * been terminated.
-     */
-    public void onEvent(GalileoEvent event);
+    private static final long serialVersionUID = -4516532285359101020L;
+
+    private int bit;
+
+    public BitmapException() {
+        super();
+    }
+
+    public BitmapException(String s) {
+        super(s);
+    }
+
+    public BitmapException(String s, int bit) {
+        super(s);
+        this.bit = bit;
+    }
+
+    public int getBit() {
+        return bit;
+    }
 }

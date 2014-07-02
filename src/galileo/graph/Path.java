@@ -32,6 +32,7 @@ import java.util.Comparator;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
+import java.util.Set;
 
 /**
  * Represents a simple graph path.  A path contains a number of vertices and
@@ -42,8 +43,8 @@ import java.util.List;
 public class Path<L extends Comparable<L>, V>
 implements Iterable<Vertex<L, V>> {
 
-    private List<Vertex<L, V>> vertices = new ArrayList<>();
-    protected Collection<V> payload = new HashSet<V>();
+    protected List<Vertex<L, V>> vertices = new ArrayList<>();
+    protected Set<V> payload = new HashSet<V>();
 
     /**
      * Create a Path with a number of vertices pre-populated.
@@ -68,7 +69,7 @@ implements Iterable<Vertex<L, V>> {
      * Create a Path with payload(s) and number of vertices pre-populated.
      */
     @SafeVarargs
-    public Path(Collection<V> payload, Vertex<L, V>... vertices) {
+    public Path(Set<V> payload, Vertex<L, V>... vertices) {
         this(vertices);
         setPayload(payload);
     }
@@ -84,6 +85,9 @@ implements Iterable<Vertex<L, V>> {
         }
     }
 
+    /**
+     * Retrieves the number of {@link Vertex} instances in this Path.
+     */
     public int size() {
         return vertices.size();
     }
@@ -92,8 +96,12 @@ implements Iterable<Vertex<L, V>> {
         vertices.add(vertex);
     }
 
+    public void add(L label) {
+        add(new Vertex<L, V>(label));
+    }
+
     public void add(L label, V value) {
-        vertices.add(new Vertex<>(label, value));
+        add(new Vertex<>(label, value));
     }
 
     public void remove(int index) {
@@ -116,11 +124,11 @@ implements Iterable<Vertex<L, V>> {
         return vertices;
     }
 
-    public Collection<V> getPayload() {
+    public Set<V> getPayload() {
         return payload;
     }
 
-    public void setPayload(Collection<V> payload) {
+    public void setPayload(Set<V> payload) {
         this.payload = payload;
     }
 

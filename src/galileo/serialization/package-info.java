@@ -29,11 +29,11 @@ software, even if advised of the possibility of such damage.
  * has some convenience features to help ease manual serialization.
  * <p>
  * Classes that can be serialized using this framework should implement the
- * {@link ByteSerializable} interface, which mandates a serialize() method that
- * converts the implementing class to a binary representation.  Rather than
- * enforcing an empty constructor and a deserialize() method, implementing
- * classes are expected to have a constructor that takes a single
- * SerializationInputStream and uses it to deserialize from the binary format
- * and initialize the object.
+ * {@link galileo.serialization.ByteSerializable} interface, which mandates a
+ * serialize() method that converts the implementing class to a binary
+ * representation.  Rather than enforcing an empty constructor and a
+ * deserialize() method, implementing classes are expected to have a constructor
+ * that takes a single SerializationInputStream and uses it to deserialize from
+ * the binary format and initialize the object.
  */
 package galileo.serialization;

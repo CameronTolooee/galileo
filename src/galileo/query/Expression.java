@@ -54,18 +54,6 @@ public class Expression implements ByteSerializable {
         this.value = value;
     }
 
-    //TODO remove (deprecated)
-    public Expression(Operator operator, double value) {
-        this.operator = operator;
-        this.value = new Feature(value);
-    }
-
-    //TODO remove (deprecated)
-    public Expression(String operator, double value) {
-        this.operator = Operator.fromString(operator);
-        this.value = new Feature(value);
-    }
-
     public Feature getValue() {
         return value;
     }

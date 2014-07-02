@@ -26,44 +26,33 @@ software, even if advised of the possibility of such damage.
 package galileo.fs;
 
 import java.io.File;
+import java.io.FileOutputStream;
 import java.io.IOException;
-
 import java.util.ArrayList;
+
+import java.util.List;
+import java.util.UUID;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
 import galileo.dataset.Block;
-import galileo.dataset.BlockMetadata;
-import galileo.dataset.FileBlock;
-import galileo.dataset.MetaArray;
-import galileo.graph.LogicalGraph;
-import galileo.graph.LogicalGraphNode;
-import galileo.graph.PhysicalGraph;
+import galileo.dataset.Metadata;
 import galileo.serialization.SerializationException;
 import galileo.serialization.Serializer;
+import galileo.util.PerformanceTimer;
 
-public class FileSystem {
+public abstract class FileSystem implements PhysicalGraph {
 
     private static final Logger logger = Logger.getLogger("galileo");
 
-    public static final String METADATA_EXTENSION = ".gmeta";
     public static final String BLOCK_EXTENSION = ".gblock";
 
     protected File storageDirectory;
     private boolean readOnly;
 
-    private Journal journal;
-
-    /** In-memory representation of the Galileo filesystem. */
-    private LogicalGraph logicalGraph;
-
-    /** On-disk representation of the Galileo filesystem.   */
-    private PhysicalGraph physicalGraph;
-
-    public FileSystem() { }
-
-    public long getFreeSpace() {
-        return storageDirectory.getFreeSpace();
+    public FileSystem(String storageRoot)
+    throws FileSystemException, IOException {
+        initialize(storageRoot);
     }
 
     protected void initialize(String storageRoot)
@@ -113,72 +102,84 @@ public class FileSystem {
         }
     }
 
-    public FileSystem(String storageRoot)
-    throws FileSystemException, IOException {
-        initialize(storageRoot);
-
-        journal = Journal.getInstance();
-        journal.setJournalPath(storageRoot + "/journal");
-
-        logicalGraph  = new LogicalGraph();
-        physicalGraph = new PhysicalGraph(storageDirectory);
+    /**
+     * Scans a directory (and its subdirectories) for blocks.
+     *
+     * @param directory
+     *     Directory to scan for blocks.
+     *
+     * @return ArrayList of String paths to blocks on disk.
+     */
+    protected List<String> scanDirectory(File directory) {
+        List<String> blockPaths = new ArrayList<String>();
+        scanSubDirectory(directory, blockPaths);
+        return blockPaths;
     }
 
-    public void recoverMetadata() {
-//TODO: this used to be in LogicalGraph; move elsewhere
-//        logicalGraph.recoverFromJournal();
-/*
-    public void recoverFromJournal() {
-        long numEntries = 0;
-        long recoveryStart = System.nanoTime();
-        System.out.print("Recovering metadata from journal...  ");
+    /**
+     * Scans a directory (and its subdirectories) for blocks.
+     *
+     * @param directory
+     *     Directory file descriptor to scan
+     *
+     * @param fileList
+     *     ArrayList of Strings to populate with FileBlock paths.
+     */
+    private void scanSubDirectory(File directory, List<String> fileList) {
+        for (File file : directory.listFiles()) {
+            if (file.isDirectory()) {
+                scanSubDirectory(file, fileList);
+                continue;
+    }
 
-        try {
-            BufferedReader reader = journal.getReader();
-            String line;
-            while ((line = reader.readLine()) != null) {
-                String[] nodeParts = line.split(",");
-                rootNode.addNodePath(nodeParts[0], nodeParts[1]);
-                ++numEntries;
+            String fileName = file.getAbsolutePath();
+            if (fileName.endsWith(FileSystem.BLOCK_EXTENSION)) {
+                fileList.add(fileName);
             }
-        } catch (IOException e) {
-            System.out.println("Error reading journal!");
-            e.printStackTrace();
         }
-
-        long recoveryEnd = System.nanoTime();
-        System.out.println("done.");
-        System.out.println("Recovered " + numEntries + " entries in "
-            + (recoveryEnd - recoveryStart) * 1E-6 + "ms.");
-    }
-*/
-        recover();
     }
 
     /**
      * Does a full recovery from disk; this scans every block in the system,
-     * reads its metadata, and performs a checksum to verify block integrity.
+     * reads metadata, and performs a checksum to verify integrity.  If not
+     * already obvious, this could be very slow.
+*/
+    protected void fullRecovery() {
+        logger.warning("Performing full recovery from disk");
+        List<String> blockPaths = rebuildPaths(storageDirectory);
+        recover(blockPaths);
+    }
+
+    /**
+     * Scans the directory structure on disk to find all the blocks stored.
+     *
+     * @param storageDir the root directory to start scanning from.
      */
-    private void recover() {
-        logger.info("Recovering graph from disk");
+    protected List<String> rebuildPaths(File storageDir) {
+        PerformanceTimer rebuildTimer = new PerformanceTimer();
+        rebuildTimer.start();
+        logger.info("Recovering path index");
+        List<String> blockPaths = scanDirectory(storageDir);
+        rebuildTimer.stop();
+        logger.info("Index recovery took "
+                + rebuildTimer.getLastResult() + " ms.");
+        return blockPaths;
+    }
 
-        long recoverStart, recoverEnd, indexStart, indexEnd, metaStart, metaEnd;
-        recoverStart = System.nanoTime();
-
-        logger.info("Recovering index");
-        indexStart = System.nanoTime();
-        ArrayList<String> blockPaths = physicalGraph.getBlockPaths();
-        indexEnd = System.nanoTime();
-        logger.info("Index recovery complete.  Took " +
-                (indexEnd - indexStart) * 1E-6 + " ms.");
-
-        metaStart = System.nanoTime();
+    /**
+     * Does a full recovery from disk on a particular Galileo partition; this
+     * scans every block in the partition, reads its metadata, and performs a
+     * checksum to verify block integrity.
+     */
+    protected void recover(List<String> blockPaths) {
+        PerformanceTimer recoveryTimer = new PerformanceTimer();
+        recoveryTimer.start();
         logger.info("Recovering metadata and building graph");
         long counter = 0;
         for (String path : blockPaths) {
             try {
-                BlockMetadata metadata = physicalGraph.loadMetadata(path);
-                logicalGraph.addBlock(metadata, path);
+                Metadata metadata = loadMetadata(path);
+                storeMetadata(metadata, path);
                 ++counter;
                 if (counter % 10000 == 0) {
                     logger.info(String.format("%d blocks scanned, " +
@@ -190,57 +191,51 @@ public class FileSystem {
                       "for block: " + path, e);
           }
       }
-        metaEnd = System.nanoTime();
-        logger.info("Metadata recovery complete.  Recovered " + counter +
-                " blocks in " + (metaEnd - metaStart) * 1E-6 + " ms.");
-
-        recoverEnd = System.nanoTime();
-        logger.info("Graph recovery complete.  Took "
-            + (recoverEnd - recoverStart) * 1E-6 + " ms.");
+        recoveryTimer.stop();
+        logger.info("Recovery operation complete. Time: "
+                + recoveryTimer.getLastResult() + " ms.");
     }
 
-    public void storeBlock(byte[] blockBytes)
-    throws IOException, FileSystemException, SerializationException {
-        FileBlock block = Serializer.deserialize(FileBlock.class, blockBytes);
-        storeBlock(block, blockBytes);
+    @Override
+    public Block loadBlock(String blockPath)
+    throws IOException, SerializationException {
+        Block block = Serializer.restore(Block.class, blockPath);
+        return block;
     }
 
-    public void storeBlock(FileBlock block)
-    throws IOException, FileSystemException {
-        byte[] blockBytes = Serializer.serialize(block);
-        storeBlock(block, blockBytes);
+    @Override
+    public Metadata loadMetadata(String blockPath)
+    throws IOException, SerializationException {
+        /* We can just load the block as usual, but only perform the
+         * deserialization on the Metadata.  Metadata is stored as the first
+         * item in a serialized Block instance. */
+        Metadata meta = Serializer.restore(Metadata.class, blockPath);
+        return meta;
     }
 
-    public void storeBlock(FileBlock block, byte[] blockBytes)
-    throws IOException, FileSystemException {
-        String blockPath = physicalGraph.storeBlock(block, blockBytes);
-        logicalGraph.addBlock(block.getMetadata(), blockPath);
+    @Override
+    public String storeBlock(Block block)
+    throws FileSystemException, IOException {
+        String name = block.getMetadata().getName();
+        if (name.equals("")) {
+            UUID blockUUID = UUID.nameUUIDFromBytes(block.getData());
+            name = blockUUID.toString();
     }
 
-    public MetaArray query(String query)
-    throws IOException {
-        LogicalGraphNode[] nodes = logicalGraph.query(query);
+        String blockPath = storageDirectory + "/" + name
+            + FileSystem.BLOCK_EXTENSION;
 
-        ArrayList<String> nodePaths = new ArrayList<String>();
-        for (LogicalGraphNode node : nodes) {
-            nodePaths.addAll(node.getBlockPaths());
+        FileOutputStream blockOutStream = new FileOutputStream(blockPath);
+        byte[] blockData = Serializer.serialize(block);
+        blockOutStream.write(blockData);
+        blockOutStream.close();
+
+        return blockPath;
         }
 
-        MetaArray metas = new MetaArray();
-        for (String path : nodePaths) {
-            try {
-                BlockMetadata meta = physicalGraph.loadMetadata(path);
-                meta.getRuntimeMetadata().setPhysicalGraphPath(path);
-                metas.add(meta);
-            } catch (Exception e) {
-                System.out.println("Couldn't recover Metadata: " + path);
-                e.printStackTrace();
-                continue;
-            }
-        }
-
-        return metas;
-    }
+    @Override
+    public abstract void storeMetadata(Metadata metadata, String blockPath)
+        throws FileSystemException, IOException;
 
     /**
      * Reports whether the Galileo filesystem is read-only.
@@ -250,4 +245,27 @@ public class FileSystem {
     public boolean isReadOnly() {
         return readOnly;
     }
+
+    /**
+     * Reports the amount of free space (in bytes) in the root storage
+     * directory.
+     *
+     * @return long integer with the amount of free space, in bytes.
+     */
+    public long getFreeSpace() {
+        return storageDirectory.getFreeSpace();
+    }
+
+    /**
+     * Performs a clean shutdown of the FileSystem instance.  This includes
+     * flushing buffers, writing changes out to disk, persisting index
+     * structures, etc.
+     * <p>
+     * Note that this method may be called during a signal handling operation,
+     * which may mean that the logging subsystem has already shut down, so
+     * critical errors/information should be printed to stdout or stderr.
+     * Furthermore, there is no guarantee all the shutdown operations will be
+     * executed, so time is of the essence here.
+     */
+    public abstract void shutdown();
 }

@@ -7,7 +7,9 @@
 #        Contact: Matthew Malensek (matthew@malensek.net)
 ################################################################################
 
-ssh_opts='-oStrictHostkeyChecking=no -oForwardX11=no'
+ssh_opts="-oStrictHostkeyChecking=no \
+          -oForwardX11=no \
+          -oPasswordAuthentication=no"
 
 ################################################################################
 

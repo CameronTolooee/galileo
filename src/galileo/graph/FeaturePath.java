@@ -25,9 +25,13 @@ software, even if advised of the possibility of such damage.
 
 package galileo.graph;
 
-import java.util.Collection;
+import java.util.List;
+import java.util.Set;
 
 import galileo.dataset.feature.Feature;
+import galileo.query.Expression;
+import galileo.query.Operation;
+import galileo.query.Query;
 
 /**
  * Contains a graph {@link Path} composed of Features.
@@ -47,9 +51,83 @@ public class FeaturePath<V> extends Path<Feature, V> {
         this.addPayload(payload);
     }
 
-    public FeaturePath(Collection<V> payload, Feature... features) {
+    public FeaturePath(Set<V> payload, Feature... features) {
         this(features);
         this.setPayload(payload);
     }
 
+    /**
+     * Evaluates this path against a provided {@link Query} instance.  If any of
+     * the {@link Operation}s in the Query are satisfied by this Path instance,
+     * this method will return true.
+     *
+     * @param query Query to evaluate against this Path instance
+     *
+     * @return true if the Query is satisfied by this path, or false otherwise.
+     */
+    public boolean satisfiesQuery(Query query)
+    throws GraphException {
+        for (Operation operation : query.getOperations()) {
+            if (this.satisfiesOperation(operation)) {
+                return true;
+            }
+        }
+
+        /* None of the query operations were satisfied by this path */
+        return false;
+    }
+
+    private boolean satisfiesOperation(Operation operation)
+    throws GraphException {
+        for (Vertex<Feature, V> vertex : this.getVertices()) {
+            Feature feature = vertex.getLabel();
+            List<Expression> expressions
+                = operation.getOperand(feature.getName());
+
+            if (expressions == null) {
+                continue;
+            }
+
+            for (Expression expression : expressions) {
+                if (this.satisfiesExpression(feature, expression) == false) {
+                    /* All expressions within an operation must be satisfied. */
+                    return false;
+                }
+            }
+        }
+
+        /* All Expressions in the Operation were satisfied by this path */
+        return true;
+    }
+
+    private boolean satisfiesExpression(
+            Feature feature, Expression expression)
+    throws GraphException {
+
+        Feature value = expression.getValue();
+
+        switch (expression.getOperator()) {
+            case EQUAL:
+                return (feature.equals(value) == true);
+
+            case NOTEQUAL:
+                return (feature.equals(value) == false);
+
+            case LESS:
+                return feature.less(value);
+
+            case LESSEQUAL:
+                return (feature.less(value) || feature.equals(value));
+
+            case GREATER:
+                return feature.greater(value);
+
+            case GREATEREQUAL:
+                return (feature.greater(value) || feature.equals(value));
+
+            case UNKNOWN:
+            default:
+                throw new GraphException("Invalid operator");
+        }
+    }
 }

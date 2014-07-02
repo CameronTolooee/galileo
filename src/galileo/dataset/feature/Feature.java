@@ -402,9 +402,16 @@ public class Feature implements Comparable<Feature>, ByteSerializable {
     }
 
     @Deserialize
+    public Feature(String name, FeatureType type, SerializationInputStream in)
+    throws IOException, SerializationException {
+        setName(name);
+        data = Serializer.deserializeFromStream(type.toClass(), in);
+    }
+
+    @Deserialize
     public Feature(SerializationInputStream in)
     throws IOException, SerializationException {
-        name = new String(in.readString());
+        setName(in.readString());
         FeatureType type = FeatureType.fromInt(in.readInt());
         data = Serializer.deserializeFromStream(type.toClass(), in);
     }

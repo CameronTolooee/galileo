@@ -74,7 +74,7 @@ public class QueryTest {
                     new Expression("==", new Feature("precipitable_water", 4.2375383f)),
                     new Expression("==", new Feature("temperature_surface", 257.41336f))));
         System.out.println("Query: " + q);
-        MetadataGraph result = gfs.query(q);
+        MetadataGraph result = MetadataGraph.fromPaths(gfs.query(q));
         System.out.println(result);
 
         gfs.shutdown();

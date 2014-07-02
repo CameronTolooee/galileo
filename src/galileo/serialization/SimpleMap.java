@@ -1,5 +1,5 @@
 /*
-Copyright (c) 2013, Colorado State University
+Copyright (c) 2014, Colorado State University
 All rights reserved.
 
 Redistribution and use in source and binary forms, with or without modification,
@@ -23,23 +23,40 @@ any theory of liability, whether in contract, strict liability, or tort
 software, even if advised of the possibility of such damage.
 */
 
-package galileo.dataset;
+package galileo.serialization;
+
+import java.util.Collection;
+
+import galileo.serialization.ByteSerializable;
 
 /**
- * Describes the type of data stored in a FileBlock.  This may be Galileo's
- * native data storage format, a NetCDF file, or some other filetype.
+ * Defines a very basic serializable map that consists of Key, Value pairs
+ * wherein the Key can be ascertained by the Value directly.
+ *
+ * @author malensek
  */
-public enum BlockType {
-    NATIVE (1),
-    NETCDF (2);
+public interface SimpleMap<K, V extends ByteSerializable> {
 
-    private final int typeId;
+    /**
+     * Places an item in this data structure.
+     */
+    public void put(V item);
 
-    private BlockType(int typeId) {
-        this.typeId = typeId;
-    }
+    /**
+     * Retrieves an item from this data structure.
+     *
+     * @param key Key of the item to retrieve; for instance, the item's name.
+     */
+    public V get(K key);
 
-    public int getTypeId() {
-        return typeId;
-    }
+
+    /**
+     * Retrieves all the values contained in this data structure.
+     */
+    public Collection<V> values();
+
+    /**
+     * Reports the current size of the data structure.
+     */
+    public int size();
 }

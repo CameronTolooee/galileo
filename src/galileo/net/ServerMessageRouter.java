@@ -26,36 +26,93 @@ software, even if advised of the possibility of such damage.
 package galileo.net;
 
 import java.io.IOException;
-
 import java.net.InetSocketAddress;
-
 import java.nio.channels.SelectionKey;
 import java.nio.channels.Selector;
 import java.nio.channels.ServerSocketChannel;
+import java.util.HashMap;
+import java.util.Map;
 
+/**
+ * Handles message routing on a {@link java.nio.channels.ServerSocketChannel}.
+ * This class is useful for components that must accept incoming requests from
+ * clients.
+ *
+ * @author malensek
+ */
 public class ServerMessageRouter extends MessageRouter {
 
-    private int port;
-    private ServerSocketChannel serverChannel;
+    private Thread selectorThread;
+    private Map<Integer, ServerSocketChannel> channels = new HashMap<>();
 
-    public ServerMessageRouter(int port) {
-        this.port = port;
+    public ServerMessageRouter() { }
+
+    public ServerMessageRouter(int readBufferSize, int maxWriteQueueSize) {
+        super(readBufferSize, maxWriteQueueSize);
+    }
+
+    /**
+     * Initializes (opens) this MessageRouter's {@link Selector} instance.
+     */
+    private synchronized void initializeSelector()
+    throws IOException {
+        if (this.selector == null) {
+        this.selector = Selector.open();
+        }
+    }
+
+    /**
+     * Starts the selector thread loop and sets this MessageRouter status to
+     * online.
+     */
+    private synchronized void startSelectorThread() {
+        if (selectorThread == null || this.online == false) {
+            selectorThread = new Thread(this);
+        selectorThread.start();
+            this.online = true;
+        }
     }
 
     /**
      * Initializes the server socket channel for incoming client connections and
      * begins listening for messages.
+     *
+     * @param port The port to listen for messages on.
      */
-    public void listen()
+    public void listen(int port)
     throws IOException {
-        this.selector = Selector.open();
-        serverChannel = ServerSocketChannel.open();
-        serverChannel.configureBlocking(false);
-        serverChannel.socket().bind(new InetSocketAddress(this.port));
-        serverChannel.register(selector, SelectionKey.OP_ACCEPT);
-        this.online = true;
+        initializeSelector();
 
-        Thread selectorThread = new Thread(this);
-        selectorThread.start();
+        ServerSocketChannel channel = ServerSocketChannel.open();
+        channel.configureBlocking(false);
+        channel.socket().bind(new InetSocketAddress(port));
+        channel.register(selector, SelectionKey.OP_ACCEPT);
+        channels.put(port, channel);
+
+        startSelectorThread();
+    }
+
+    /**
+     * Closes the server socket channel and stops processing incoming
+     * messages.
+     */
+    public void shutdown() throws IOException {
+        for (int port : channels.keySet()) {
+            close(port);
+        }
+        this.online = false;
+        selector.wakeup();
+    }
+
+    /**
+     * @param port Port number to stop listening on.
+     */
+    public void close(int port) throws IOException {
+        ServerSocketChannel channel = channels.get(port);
+        if (channel == null) {
+            return;
+        }
+
+        channel.close();
     }
 }

@@ -38,12 +38,10 @@ import java.nio.channels.SocketChannel;
 import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
-import java.util.Queue;
 import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.logging.Level;
 import java.util.logging.Logger;
-
-import galileo.serialization.Serializer;
 
 /**
  * Provides an abstract implementation for consuming and publishing messages on
@@ -52,6 +50,11 @@ import galileo.serialization.Serializer;
  * @author malensek
  */
 public abstract class MessageRouter implements Runnable {
+
+    protected static final Logger logger = Logger.getLogger("galileo");
+
+    /** The size (in bytes) of the message prefix used in the system. */
+    public static final int PREFIX_SZ = Integer.SIZE / Byte.SIZE;
 
     /** The default read buffer size is 8 MB. */
     public static final int DEFAULT_READ_BUFFER_SIZE = 8388608;
@@ -70,8 +73,7 @@ public abstract class MessageRouter implements Runnable {
     public static final String WRITE_QUEUE_PROPERTY
         = "galileo.net.MessageRouter.writeQueueSize";
 
-    protected static final Logger logger = Logger.getLogger("galileo");
-
+    /** Flag used to determine whether the Selector thread should run */
     protected boolean online;
 
     private List<MessageListener> listeners = new ArrayList<>();
@@ -81,6 +83,9 @@ public abstract class MessageRouter implements Runnable {
     protected int readBufferSize;
     protected int writeQueueSize;
     private ByteBuffer readBuffer;
+
+    protected ConcurrentHashMap<SelectionKey, Integer> changeInterest
+        = new ConcurrentHashMap<>();
 
     public MessageRouter() {
         this(DEFAULT_READ_BUFFER_SIZE, DEFAULT_WRITE_QUEUE_SIZE);
@@ -112,10 +117,32 @@ public abstract class MessageRouter implements Runnable {
     public void run() {
         while (online) {
             try {
+                updateInterestOps();
                 processSelectionKeys();
             } catch (IOException e) {
-                e.printStackTrace();
+                logger.log(Level.WARNING, "Error in selector thread", e);
             }
+        }
+    }
+
+    /**
+     * Updates interest sets for any SelectionKey instances that require
+     * changes.  This allows external threads to queue up changes to the
+     * interest sets that will be fulfilled by the selector thread.
+     */
+    protected void updateInterestOps() {
+        Iterator<SelectionKey> it = changeInterest.keySet().iterator();
+        while (it.hasNext()) {
+            SelectionKey key = it.next();
+            if (key.isValid()) {
+                SocketChannel channel = (SocketChannel) key.channel();
+                if (channel.isConnected() == false
+                        || channel.isRegistered() == false) {
+                    continue;
+                }
+                key.interestOps(changeInterest.get(key));
+            }
+            changeInterest.remove(key);
         }
     }
 
@@ -125,21 +152,20 @@ public abstract class MessageRouter implements Runnable {
      */
     protected void processSelectionKeys()
     throws IOException {
-        int updated = selector.select();
-        if (updated == 0) {
-            return;
-        }
+
+        selector.select();
 
         Iterator<SelectionKey> keys = selector.selectedKeys().iterator();
         while (keys.hasNext()) {
             SelectionKey key = keys.next();
             keys.remove();
 
-            if (!key.isValid()) {
+            if (key.isValid() == false) {
                 continue;
             }
 
             try {
+
                 if (key.isAcceptable()) {
                     accept(key);
                     continue;
@@ -174,10 +200,13 @@ public abstract class MessageRouter implements Runnable {
     throws IOException {
         ServerSocketChannel servSocket = (ServerSocketChannel) key.channel();
         SocketChannel channel = servSocket.accept();
-        TransmissionTracker tracker = new TransmissionTracker(writeQueueSize);
         logger.info("Accepted connection: " + getClientString(channel));
+
+        TransmissionTracker tracker = new TransmissionTracker(writeQueueSize);
         channel.configureBlocking(false);
         channel.register(selector, SelectionKey.OP_READ, tracker);
+
+        dispatchConnect(getDestination(channel));
     }
 
     /**
@@ -190,9 +219,19 @@ public abstract class MessageRouter implements Runnable {
             SocketChannel channel = (SocketChannel) key.channel();
 
             if (channel.finishConnect()) {
-                key.interestOps(SelectionKey.OP_READ);
+                TransmissionTracker tracker = TransmissionTracker.fromKey(key);
+                if (tracker.hasPendingData() == false) {
+                    changeInterest.put(key, SelectionKey.OP_READ);
+                } else {
+                    /* Data has already been queued up; start writing */
+                    changeInterest.put(key,
+                            SelectionKey.OP_READ | SelectionKey.OP_WRITE);
             }
+            }
+
+            dispatchConnect(getDestination(channel));
         } catch (IOException e) {
+            logger.log(Level.INFO, "Connection finalization failed", e);
             disconnect(key);
         }
     }
@@ -215,7 +254,7 @@ public abstract class MessageRouter implements Runnable {
                 processIncomingMessage(key);
             }
         } catch (IOException e) {
-            /* Abnormal termination */
+            logger.log(Level.FINE, "Abnormal remote termination", e);
             disconnect(key);
             return;
         } catch (BufferUnderflowException e) {
@@ -225,6 +264,7 @@ public abstract class MessageRouter implements Runnable {
 
         if (bytesRead == -1) {
             /* Connection was terminated by the client. */
+            logger.fine("Reached EOF in channel input stream");
             disconnect(key);
             return;
         }
@@ -246,7 +286,7 @@ public abstract class MessageRouter implements Runnable {
 
             /* Check if we have read the payload size prefix yet.  If
              * not, then we're done for now. */
-            if (!ready) {
+            if (ready == false) {
                 return;
             }
         }
@@ -262,13 +302,17 @@ public abstract class MessageRouter implements Runnable {
 
         if (transmission.readPointer == transmission.expectedBytes) {
             /* The payload has been read */
-            GalileoMessage msg = new GalileoMessage(transmission.payload, key);
+            GalileoMessage msg = new GalileoMessage(
+                    transmission.payload,
+                    new MessageContext(this, key));
             dispatchMessage(msg);
             transmission.resetCounters();
 
             if (readBuffer.hasRemaining()) {
                 /* There is another payload to read */
                 processIncomingMessage(key);
+                /* Note: this process continues until we reach the end of the
+                 * buffer.  Not doing so would cause us to lose data. */
             }
         }
     }
@@ -287,16 +331,18 @@ public abstract class MessageRouter implements Runnable {
             return true;
         }
 
-        /* Can we determine the payload size in one shot? (1 int = 4 bytes) */
-        if (transmission.prefixPointer == 0 && buffer.remaining() >= 4) {
+        /* Can we determine the payload size in one shot? (we must read at least
+         * PREFIX_SZ bytes) */
+        if (transmission.prefixPointer == 0
+                && buffer.remaining() >= PREFIX_SZ) {
             transmission.expectedBytes = buffer.getInt();
             transmission.allocatePayload();
             return true;
         } else {
-            /* Keep reading until we have at least 4 bytes to determine the
-             * payload size.  */
+            /* Keep reading until we have at least PREFIX_SZ bytes to determine
+             * the payload size.  */
 
-            int prefixLeft = 4 - transmission.prefixPointer;
+            int prefixLeft = PREFIX_SZ - transmission.prefixPointer;
             if (buffer.remaining() < prefixLeft) {
                 prefixLeft = buffer.remaining();
             }
@@ -305,7 +351,7 @@ public abstract class MessageRouter implements Runnable {
                     transmission.prefixPointer, prefixLeft);
             transmission.prefixPointer += prefixLeft;
 
-            if (transmission.prefixPointer >= 4) {
+            if (transmission.prefixPointer >= PREFIX_SZ) {
                 ByteBuffer buf = ByteBuffer.wrap(transmission.prefix);
                 transmission.expectedBytes = buf.getInt();
                 transmission.allocatePayload();
@@ -317,75 +363,69 @@ public abstract class MessageRouter implements Runnable {
     }
 
     /**
-     * Attempts to write out directly on a SocketChannel, and, if unsuccessful,
-     * registers the OP_WRITE interest op to tell the Selector to deal with the
-     * write.  When letting the Selector deal with the write, pending data is
-     * added to a blocking queue.  This means that if the queue reaches a set
-     * limit, this function may block to prevent queuing too much data.
+     * Wraps a given message in a {@link ByteBuffer}, including the payload size
+     * prefix.  Data produced by this method will be subsequently read by the
+     * readPrefix() method.
+     */
+    protected static ByteBuffer wrapWithPrefix(GalileoMessage message) {
+        int messageSize = message.getPayload().length;
+        ByteBuffer buffer = ByteBuffer.allocate(messageSize + 4);
+        buffer.putInt(messageSize);
+        buffer.put(message.getPayload());
+        buffer.flip();
+        return buffer;
+    }
+
+    /**
+     * Adds a message to the pending write queue for a particular SelectionKey
+     * and submits a change request for its interest set. Pending data is placed
+     * in a blocking queue, so this function may block to prevent queueing an
+     * excessive amount of data.
+     * <p>
+     * The system property <em>galileo.net.MessageRouter.writeQueueSize</em>
+     * tunes the maximum amount of data that can be queued.
      *
      * @param key SelectionKey for the channel.
      * @param message GalileoMessage to publish on the channel.
+     *
+     * @return {@link Transmission} instance representing the send operation.
      */
-    public void sendMessage(SelectionKey key, GalileoMessage message)
+    public Transmission sendMessage(SelectionKey key, GalileoMessage message)
     throws IOException {
-        SocketChannel channel = (SocketChannel) key.channel();
-        TransmissionTracker tracker = TransmissionTracker.fromKey(key);
-        ByteBuffer payload = ByteBuffer.wrap(Serializer.serialize(message));
-        BlockingQueue<ByteBuffer> pendingWriteQueue
-            = tracker.getPendingWriteQueue();
-
-        if (!pendingWriteQueue.isEmpty()) {
-            try {
-                pendingWriteQueue.put(payload);
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                throw new IOException("Sender thread interrupted");
-            }
-            key.interestOps(SelectionKey.OP_WRITE);
-            selector.wakeup();
-            return;
+        //TODO reduce the visibility of this method to protected
+        if (this.isOnline() == false) {
+            throw new IOException("MessageRouter is not online.");
         }
 
-        int written = 0;
-        while (payload.hasRemaining()) {
-            written = channel.write(payload);
+        TransmissionTracker tracker = TransmissionTracker.fromKey(key);
+        ByteBuffer payload = wrapWithPrefix(message);
 
-            if (written == 0) {
-                /* If the write operation failed to write any bytes, register it
-                 * with the Selector so it can be handled during the next
-                 * selection phase. */
+        Transmission trans = null;
                 try {
-                    pendingWriteQueue.put(payload);
+            tracker.queueOutgoingData(payload);
                 } catch (InterruptedException e) {
                     Thread.currentThread().interrupt();
-                    throw new IOException("Sender thread interrupted");
+            throw new IOException("Interrupted while waiting to queue data");
                 }
-                key.interestOps(SelectionKey.OP_WRITE);
-                selector.wakeup();
 
-                return;
+        changeInterest.put(key, SelectionKey.OP_READ | SelectionKey.OP_WRITE);
+        selector.wakeup();
+        return trans;
             }
-        }
-    }
-
 
     /**
      * When a {@link SelectionKey} is writable, push as much pending data
-     * out on the channel as possible.  This method is called when a message
-     * couldn't be published directly by its originating thread.
+     * out on the channel as possible.
      *
      * @param key {@link SelectionKey} of the channel to write to.
      */
     private void write(SelectionKey key) {
         TransmissionTracker tracker = TransmissionTracker.fromKey(key);
         SocketChannel channel = (SocketChannel) key.channel();
-        BlockingQueue<ByteBuffer> pendingWrites
-            = tracker.getPendingWriteQueue();
 
-        key.interestOps(SelectionKey.OP_READ);
-
-        while (!pendingWrites.isEmpty()) {
-            ByteBuffer buffer = pendingWrites.peek();
+        while (tracker.hasPendingData() == true) {
+            Transmission trans = tracker.getNextTransmission();
+            ByteBuffer buffer = trans.getPayload();
             if (buffer == null) {
                 break;
             }
@@ -400,19 +440,20 @@ public abstract class MessageRouter implements Runnable {
                     return;
                 }
 
-                if (!buffer.hasRemaining()) {
+                if (buffer.hasRemaining() == false) {
                     /* Done writing */
-                    pendingWrites.remove();
+                    tracker.transmissionFinished();
                 }
 
                 if (written == 0) {
-                    key.interestOps(SelectionKey.OP_WRITE);
+                    /* Return now, to keep our OP_WRITE interest op set. */
                     return;
                 }
             }
         }
 
         /* At this point, the queue is empty. */
+        key.interestOps(SelectionKey.OP_READ);
         return;
     }
 
@@ -422,12 +463,13 @@ public abstract class MessageRouter implements Runnable {
      * @param key The SelectionKey of the SocketChannel that has disconnected.
      */
     protected void disconnect(SelectionKey key) {
-        if (!key.isValid()) {
+        if (key.isValid() == false) {
             return;
         }
 
         SocketChannel channel = (SocketChannel) key.channel();
-        logger.info("Terminating connection: " + getClientString(channel));
+        NetworkDestination destination = getDestination(channel);
+        logger.info("Terminating connection: " + destination.toString());
 
         try {
             key.cancel();
@@ -435,6 +477,19 @@ public abstract class MessageRouter implements Runnable {
         } catch (IOException e) {
             logger.log(Level.WARNING, "Failed to disconnect channel", e);
         }
+
+        dispatchDisconnect(destination);
+    }
+
+    /**
+     * Adds a message listener (consumer) to this MessageRouter.  Listeners
+     * receive messages that are published by this MessageRouter.
+     *
+     * @param listener {@link MessageListener} that will consume messages
+     * published by this MessageRouter.
+     */
+    public void addListener(MessageListener listener) {
+        listeners.add(listener);
     }
 
     /**
@@ -449,14 +504,23 @@ public abstract class MessageRouter implements Runnable {
     }
 
     /**
-     * Adds a message listener (consumer) to this MessageRouter.  Listeners
-     * receive messages that are published by this MessageRouter.
-     *
-     * @param listener {@link MessageListener} that will consume messages
-     * published by this MessageRouter.
+     * Informs all listening consumers that a connection to a remote endpoint
+     * has been made.
      */
-    public void addListener(MessageListener listener) {
-        listeners.add(listener);
+    protected void dispatchConnect(NetworkDestination endpoint) {
+        for (MessageListener listener : listeners) {
+            listener.onConnect(endpoint);
+        }
+    }
+
+    /**
+     * Informs all listening consumers that a connection to a remote endpoint
+     * has been terminated.
+     */
+    protected void dispatchDisconnect(NetworkDestination endpoint) {
+        for (MessageListener listener : listeners) {
+            listener.onDisconnect(endpoint);
+        }
     }
 
     /**
@@ -475,8 +539,23 @@ public abstract class MessageRouter implements Runnable {
      *
      * @param channel Channel to get client information about.
      */
-    private static String getClientString(SocketChannel channel) {
+    protected static String getClientString(SocketChannel channel) {
         Socket socket = channel.socket();
         return socket.getInetAddress().getHostName() + ":" + socket.getPort();
+    }
+
+    /**
+     * Determines a connection's endpoint information (hostname and port) and
+     * encapsulates them in a {@link NetworkDestination}.
+     *
+     * @param channel The SocketChannel of the network endpoint.
+     *
+     * @return NetworkDestination representation of the endpoint.
+     */
+    protected static NetworkDestination getDestination(SocketChannel channel) {
+        Socket socket = channel.socket();
+        return new NetworkDestination(
+                socket.getInetAddress().getHostName(),
+                socket.getPort());
     }
 }

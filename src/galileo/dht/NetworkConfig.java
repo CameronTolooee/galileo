@@ -105,9 +105,13 @@ public class NetworkConfig {
         int lineNum = 0;
         String line;
 
+        /* A line looks something like hostname:port */
         while ((line = reader.readLine()) != null) {
             ++lineNum;
             line = line.trim().replaceAll("\\s","");
+            if (line.startsWith("#") || line.equals("")) {
+                continue;
+            }
 
             String[] hostInfo = line.split(":", 2);
             String nodeName = hostInfo[0];
@@ -119,19 +123,26 @@ public class NetworkConfig {
                 continue;
             }
 
-            int port = DEFAULT_PORT;
-            if (hostInfo.length > 1) {
+            if (hostInfo.length <= 1) {
+                /* No port specified; use the default port. */
+                NodeInfo node = new NodeInfo(nodeName, DEFAULT_PORT);
+                group.addNode(node);
+            } else {
+                /* A port, or list of several comma-separated ports, has been
+                 * specified. */
+                String portStr = hostInfo[1];
+                String ports[] = portStr.split(",");
+                for (String portEntry : ports) {
                 try {
-                    port = Integer.parseInt(hostInfo[1]);
+                        int port = Integer.parseInt(portEntry);
+                        group.addNode(new NodeInfo(nodeName, port));
                 } catch (NumberFormatException e) {
                     logger.log(Level.WARNING, "Could not parse " +
                             "StorageNode port number on line " + lineNum +
                             ";  ignoring entry.", e);
                 }
             }
-
-            NodeInfo node = new NodeInfo(hostInfo[0], port);
-            group.addNode(node);
+            }
         }
         reader.close();
 

@@ -1,5 +1,5 @@
 /*
-Copyright (c) 2013, Colorado State University
+Copyright (c) 2014, Colorado State University
 All rights reserved.
 
 Redistribution and use in source and binary forms, with or without modification,
@@ -23,18 +23,36 @@ any theory of liability, whether in contract, strict liability, or tort
 software, even if advised of the possibility of such damage.
 */
 
-package galileo.event;
+package galileo.samples.net.event;
 
-import java.lang.annotation.Retention;
-import java.lang.annotation.RetentionPolicy;
+import java.io.IOException;
 
-/**
- * Provides an annotation to be used to map EventTypes to methods or classes
- * that handle them.
- *
- * @author malensek
- */
-@Retention(RetentionPolicy.RUNTIME)
-public @interface HandlesEvent {
-    EventType value();
+import galileo.event.Event;
+import galileo.serialization.SerializationInputStream;
+import galileo.serialization.SerializationOutputStream;
+
+public class GoodEvent implements Event {
+
+    private String myData;
+
+    public GoodEvent() {
+        myData = "What a good event I am!";
+    }
+
+    public String getData() {
+        return myData;
+    }
+
+    @Deserialize
+    public GoodEvent(SerializationInputStream in)
+    throws IOException {
+        myData = in.readString();
+    }
+
+    @Override
+    public void serialize(SerializationOutputStream out)
+    throws IOException {
+        out.writeString(myData);
+    }
+
 }

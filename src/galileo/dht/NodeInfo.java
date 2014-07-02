@@ -28,14 +28,16 @@ package galileo.dht;
 import java.io.IOException;
 
 import galileo.net.NetworkDestination;
+import galileo.serialization.ByteSerializable;
 import galileo.serialization.SerializationInputStream;
+import galileo.serialization.SerializationOutputStream;
 
 /**
  * Records network 'node' informaton: hostname/port pairs.
  *
  * @author malensek
  */
-public class NodeInfo extends NetworkDestination {
+public class NodeInfo extends NetworkDestination implements ByteSerializable {
 
     public NodeInfo(String hostname, int port) {
         super(hostname, port);
@@ -44,6 +46,15 @@ public class NodeInfo extends NetworkDestination {
     @Deserialize
     public NodeInfo(SerializationInputStream in)
     throws IOException {
-        super(in);
+        super("", 0);
+        this.hostname = in.readString();
+        this.port = in.readInt();
+    }
+
+    @Override
+    public void serialize(SerializationOutputStream out)
+    throws IOException {
+        out.writeString(hostname);
+        out.writeInt(port);
     }
 }

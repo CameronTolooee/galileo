@@ -70,22 +70,6 @@ public class EventPublisher {
     }
 
     /**
-     * Publishes a {@link GalileoEvent} via the client's
-     * {@link ClientMessageRouter} to all connected servers.
-     *
-     * @return identification number of the event.
-     */
-    public int broadcast(GalileoEvent event)
-    throws IOException {
-        EventContainer container = new EventContainer(event);
-        byte[] messagePayload = Serializer.serialize(container);
-        GalileoMessage message = new GalileoMessage(messagePayload);
-        router.broadcastMessage(message);
-
-        return container.getEventId();
-    }
-
-    /**
      * Wraps a GalileoEvent inside an EventContainer, and places the container
      * inside a GalileoMessage, ready to be transmitted across the network.
      */

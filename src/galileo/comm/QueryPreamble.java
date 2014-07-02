@@ -27,10 +27,12 @@ package galileo.comm;
 
 import java.io.IOException;
 
-import galileo.dht.NodeArray;
+import java.util.ArrayList;
+import java.util.List;
+
+import galileo.dht.NodeInfo;
 import galileo.event.EventType;
 import galileo.event.GalileoEvent;
-
 import galileo.serialization.SerializationException;
 import galileo.serialization.SerializationInputStream;
 import galileo.serialization.SerializationOutputStream;
@@ -44,9 +46,10 @@ import galileo.serialization.SerializationOutputStream;
 public class QueryPreamble implements GalileoEvent {
     private String id;
     private String query;
-    private NodeArray nodesInvolved;
+    private List<NodeInfo> nodesInvolved = new ArrayList<>();
 
-    public QueryPreamble(String id, String query, NodeArray nodesInvolved) {
+    public QueryPreamble(String id, String query,
+            List<NodeInfo> nodesInvolved) {
         this.id = id;
         this.query = query;
         this.nodesInvolved = nodesInvolved;
@@ -64,7 +67,7 @@ public class QueryPreamble implements GalileoEvent {
      * Retrieves the list of StorageNodes involved in servicing a QueryRequest.
      * Each node in the list should reply with resulting metadata.
      */
-    public NodeArray getNodesInvolved() {
+    public List<NodeInfo> getNodesInvolved() {
         return nodesInvolved;
     }
 
@@ -78,7 +81,7 @@ public class QueryPreamble implements GalileoEvent {
     throws IOException, SerializationException {
         id = in.readString();
         query = in.readString();
-        nodesInvolved = new NodeArray(in);
+        in.readSerializableCollection(NodeInfo.class, nodesInvolved);
     }
 
     @Override
@@ -86,6 +89,6 @@ public class QueryPreamble implements GalileoEvent {
     throws IOException {
         out.writeString(id);
         out.writeString(query);
-        out.writeSerializable(nodesInvolved);
+        out.writeSerializableCollection(nodesInvolved);
     }
 }

@@ -9,5 +9,11 @@ classes
 depcache
 build.properties
 
+# javadoc-generated documentation
+docs/api
+
 # Mac OS File Attributes
 .DS_Store
+
+# Binaries
+lib/Galileo-*.jar

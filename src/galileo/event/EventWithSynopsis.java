@@ -1,5 +1,5 @@
 /*
-Copyright (c) 2013, Colorado State University
+Copyright (c) 2014, Colorado State University
 All rights reserved.
 
 Redistribution and use in source and binary forms, with or without modification,
@@ -23,33 +23,66 @@ any theory of liability, whether in contract, strict liability, or tort
 software, even if advised of the possibility of such damage.
 */
 
-package galileo.serialization;
+package galileo.event;
 
 import java.io.IOException;
 
-import java.util.ArrayList;
-
-import galileo.serialization.ByteSerializable;
+import galileo.serialization.SerializationInputStream;
 import galileo.serialization.SerializationOutputStream;
 
 /**
- * This class implements the serialize() method and can be extended to create
- * easily serializble ArrayLists.
+ * Encapsulates a raw (byte[] based) event that includes a String representing
+ * the event synopsis.  This can be used to essentially 'tag' particular blobs
+ * of data without writing specific events.
  *
  * @author malensek
  */
-public abstract class SerializableArray<T extends ByteSerializable>
-extends ArrayList<T> implements ByteSerializable {
-/* Wow, that was a mouthful. */
+public class EventWithSynopsis implements Event {
 
-    private static final long serialVersionUID = 3821982297670342178L;
+    private String synopsis;
+    private byte[] data;
+    private boolean compress = false;
+
+    public EventWithSynopsis(String synopsis, byte[] data) {
+        this.synopsis = synopsis;
+        this.data = data;
+    }
+
+    public String getSynopsis() {
+        return this.synopsis;
+    }
+
+    public byte[] getPayload() {
+        return this.data;
+    }
+
+    /**
+     * Enables compression when serializing this event.  When deserializing,
+     * this setting has no effect.
+     */
+    public void enableCompression() {
+        this.compress = true;
+    }
+
+    /**
+     * Disables compression when serializing this event.  This is the default
+     * behavior.  When deserializing, this setting has no effect.
+     */
+    public void disableCompression() {
+        this.compress = false;
+    }
+
+    @Deserialize
+    public EventWithSynopsis(SerializationInputStream in)
+    throws IOException {
+        this.synopsis = in.readString();
+        this.data = in.readCompressableField();
+    }
 
     @Override
     public void serialize(SerializationOutputStream out)
     throws IOException {
-        out.writeInt(size());
-        for (ByteSerializable element : this) {
-            out.writeSerializable(element);
-        }
+        out.writeString(synopsis);
+        out.writeCompressableField(data, compress);
     }
 }

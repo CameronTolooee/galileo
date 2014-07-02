@@ -44,7 +44,7 @@ import java.util.TreeMap;
 public class Vertex<L extends Comparable<L>, V> {
 
     protected L label;
-    protected Collection<V> values = new HashSet<V>();
+    protected Set<V> values = new HashSet<V>();
     protected TreeMap<L, Vertex<L, V>> edges = new TreeMap<>();
 
     public Vertex() { }
@@ -155,7 +155,7 @@ public class Vertex<L extends Comparable<L>, V> {
         this.label = label;
     }
 
-    public Collection<V> getValues() {
+    public Set<V> getValues() {
         return values;
     }
 

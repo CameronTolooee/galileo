@@ -25,6 +25,7 @@ software, even if advised of the possibility of such damage.
 
 package galileo.test.net;
 
+import java.io.IOException;
 import java.util.Random;
 
 import galileo.client.EventPublisher;
@@ -33,6 +34,11 @@ import galileo.dataset.Block;
 import galileo.net.ClientMessageRouter;
 import galileo.net.NetworkDestination;
 
+/**
+ * Tests client non-blocking send operations.
+ *
+ * @author malensek
+ */
 public class BufferTestClient {
 
     private static final int MESSAGE_SIZE = 1024;
@@ -46,8 +52,10 @@ public class BufferTestClient {
         this.netDest = netDest;
         messageRouter = new ClientMessageRouter();
         publisher = new EventPublisher(messageRouter);
+    }
 
-        messageRouter.connectTo(netDest.getHostname(), netDest.getPort());
+    public void disconnect() {
+        messageRouter.shutdown();
     }
 
     public void test(int messages)
@@ -62,14 +70,25 @@ public class BufferTestClient {
     }
 
     public static void main(String[] args) throws Exception {
-        String hostname = args[0];
-        int port = Integer.parseInt(args[1]);
-        int messages = Integer.parseInt(args[2]);
+        if (args.length < 2) {
+            System.out.println(
+                    "Usage: BufferTestClient <server> <num_messages>");
+            return;
+        }
 
-        NetworkDestination netDest = new NetworkDestination(hostname, port);
+        String hostname = args[0];
+        int messages = Integer.parseInt(args[1]);
+
+        NetworkDestination netDest = new NetworkDestination(
+                hostname, BufferTestServer.PORT);
         BufferTestClient btc = new BufferTestClient(netDest);
 
+        try {
         btc.test(messages);
+        } catch (IOException e) {
+            System.out.println("Failed to send all messages!");
+        }
         System.out.println("Test complete");
+        btc.disconnect();
     }
 }

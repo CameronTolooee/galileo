@@ -13,7 +13,7 @@ statusfile="status.txt"
 
 print_usage() {
 cat <<EOM
-Usage: $(basename ${0}) [-cf] [command]
+Usage: $(basename ${0}) [-cf] [-r root_dir] [command]
 
 Commands:
     start (default) - starts a Storage Node instance.
@@ -22,8 +22,9 @@ Commands:
     status - print the current status of the active Storage Node (if any)
 
 Options:
-    -c colorize output
-    -f forceful shutdown (SIGKILL)
+    -c             colorize output
+    -f             forceful shutdown (SIGKILL)
+    -r root_dir    set the Galileo root storage directory
 EOM
 }
 
@@ -60,10 +61,11 @@ source "$(cd "$(dirname "$0")" && pwd)/galileo-environment"
 source "$(cd "$(dirname "$0")" && pwd)/util/funcs.sh"
 
 # parse options
-while getopts "cf" flag; do
+while getopts "cfr:" flag; do
     case ${flag} in
         c) use_color=true ;;
         f) signal="SIGKILL" ;;
+        r) GALILEO_ROOT="${OPTARG}" ;;
         ?) print_usage; exit 1 ;;
     esac
 done

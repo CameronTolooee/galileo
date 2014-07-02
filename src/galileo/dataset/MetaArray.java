@@ -27,22 +27,34 @@ package galileo.dataset;
 
 import java.io.IOException;
 
-import galileo.serialization.SerializableArray;
+import java.util.ArrayList;
+
+import galileo.serialization.ByteSerializable;
 import galileo.serialization.SerializationException;
 import galileo.serialization.SerializationInputStream;
+import galileo.serialization.SerializationOutputStream;
 
-public class MetaArray extends SerializableArray<BlockMetadata> {
+/**
+ * Manages an array of {@link Metadata}.
+ *
+ * @author malensek
+ */
+public class MetaArray extends ArrayList<Metadata> implements ByteSerializable {
 
     private static final long serialVersionUID = 3821982297670342178L;
 
     public MetaArray() { }
 
+    @Deserialize
     public MetaArray(SerializationInputStream in)
     throws IOException, SerializationException {
-        int size = in.readInt();
-        for (int i = 0; i < size; ++i) {
-            BlockMetadata meta = new BlockMetadata(in);
-            add(meta);
+        in.readSerializableCollection(Metadata.class, this);
         }
+
+    @Override
+    public void serialize(SerializationOutputStream out)
+    throws IOException {
+        out.writeSerializableCollection(this);
     }
+
 }

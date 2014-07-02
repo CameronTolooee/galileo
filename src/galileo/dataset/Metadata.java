@@ -82,6 +82,14 @@ public class Metadata implements ByteSerializable {
         return name;
     }
 
+    public void setName(String name) {
+        if (name == null) {
+            this.name = "";
+        } else {
+            this.name = name;
+        }
+    }
+
     /**
      * Places a single feature into this Metadata instance's attribute
      * FeatureSet.

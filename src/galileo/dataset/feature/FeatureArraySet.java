@@ -25,12 +25,11 @@ software, even if advised of the possibility of such damage.
 
 package galileo.dataset.feature;
 
-import galileo.dataset.SimpleMap;
 import galileo.serialization.ByteSerializable;
-
 import galileo.serialization.SerializationException;
 import galileo.serialization.SerializationInputStream;
 import galileo.serialization.SerializationOutputStream;
+import galileo.serialization.SimpleMap;
 
 import java.io.IOException;
 import java.util.Collection;

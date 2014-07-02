@@ -33,7 +33,7 @@ import java.util.Map;
  *
  * @author malensek
  */
-public enum EventType {
+public enum EventType implements EventTypeMap {
     UNKNOWN (0),
     GENERAL (1),
     QUERY (2),
@@ -52,6 +52,7 @@ public enum EventType {
         this.type = type;
     }
 
+    @Override
     public int toInt() {
         return type;
     }

@@ -32,6 +32,12 @@ import galileo.serialization.SerializationException;
 import galileo.serialization.SerializationInputStream;
 import galileo.serialization.SerializationOutputStream;
 
+/**
+ * The basic unit of storage in Galileo.  A block could be a file, collection of
+ * metadata, etc.
+ *
+ * @author malensek
+ */
 public class Block implements ByteSerializable {
 
     private Metadata metadata;

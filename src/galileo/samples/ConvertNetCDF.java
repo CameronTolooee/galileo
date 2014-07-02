@@ -45,6 +45,8 @@ import java.util.Date;
 import java.util.HashMap;
 import java.util.Map;
 
+import java.util.UUID;
+
 import ucar.ma2.*;
 import ucar.nc2.*;
 import ucar.nc2.dataset.NetcdfDataset;
@@ -200,6 +202,9 @@ public class ConvertNetCDF {
                 if (meta == null) {
                     /* We need to create Metadata for this location */
                     meta = new Metadata();
+
+                    UUID metaUUID = UUID.nameUUIDFromBytes(hash.getBytes());
+                    meta.setName(metaUUID.toString());
 
                     SpatialProperties location = new SpatialProperties(
                             (float) pt.getLatitude(),

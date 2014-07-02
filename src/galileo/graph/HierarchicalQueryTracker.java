@@ -28,6 +28,7 @@ package galileo.graph;
 import java.util.ArrayList;
 
 import java.util.Collection;
+import java.util.HashSet;
 import java.util.List;
 
 import galileo.dataset.feature.Feature;
@@ -68,7 +69,7 @@ public class HierarchicalQueryTracker<T> {
 
             /* Copy over the payload */
             if (vertex.getValues().size() > 0) {
-                path.setPayload(vertex.getValues());
+                path.setPayload(new HashSet<>(vertex.getValues()));
             }
 
             this.results.get(getCurrentLevel()).add(path);

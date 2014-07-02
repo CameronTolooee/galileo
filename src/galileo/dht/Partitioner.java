@@ -25,7 +25,6 @@ software, even if advised of the possibility of such damage.
 
 package galileo.dht;
 
-import galileo.dataset.BlockMetadata;
 import galileo.dht.hash.HashException;
 
 /**

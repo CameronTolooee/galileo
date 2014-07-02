@@ -27,9 +27,9 @@ package galileo.net;
 
 import java.nio.ByteBuffer;
 import java.nio.channels.SelectionKey;
-import java.util.Queue;
+import java.util.Iterator;
+import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.BlockingQueue;
-import java.util.concurrent.LinkedBlockingQueue;
 
 /**
  * Tracks transmission processing operations; helps convert TCP streams into
@@ -38,10 +38,9 @@ import java.util.concurrent.LinkedBlockingQueue;
  *
  * @author malensek
  */
-public class TransmissionTracker {
+class TransmissionTracker {
 
-    /** Contains a list of pending write operations for this client. */
-    private BlockingQueue<ByteBuffer> pendingWrites;
+    private BlockingQueue<Transmission> pendingTransmissions;
 
     /** Read pointer for the message size prefix */
     public int prefixPointer;
@@ -59,7 +58,7 @@ public class TransmissionTracker {
     public int expectedBytes;
 
     public TransmissionTracker(int writeQueueSize) {
-        pendingWrites = new LinkedBlockingQueue<>(writeQueueSize);
+        pendingTransmissions = new ArrayBlockingQueue<>(writeQueueSize);
     }
 
     /**
@@ -80,8 +79,38 @@ public class TransmissionTracker {
         expectedBytes = 0;
     }
 
-    public BlockingQueue<ByteBuffer> getPendingWriteQueue() {
-        return pendingWrites;
+    public Transmission queueOutgoingData(ByteBuffer payload)
+    throws InterruptedException {
+        Transmission trans = new Transmission(payload);
+        pendingTransmissions.put(trans);
+        return trans;
+    }
+
+    /**
+     * Determines whether the SocketChannel associated with this
+     * TransmissionTracker has pending transmissions.
+     */
+    public boolean hasPendingData() {
+        return pendingTransmissions.isEmpty() == false;
+    }
+
+    /**
+     * Retrieves the currently-pending Transmission.
+     */
+    public Transmission getNextTransmission() {
+        return pendingTransmissions.peek();
+    }
+
+    public Iterator<Transmission> pendingTransmissionIterator() {
+        return pendingTransmissions.iterator();
+    }
+
+    /**
+     * Marks the current Transmission as finished.
+     */
+    public void transmissionFinished() {
+        Transmission trans = pendingTransmissions.remove();
+        trans.setFinished();
     }
 
     /**

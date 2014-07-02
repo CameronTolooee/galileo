@@ -2,11 +2,13 @@
 ################################################################################
 # galileo-cluster - manage a Galileo cluster
 #
-# This script is a simple wrapper around galileo-node.  Valid flags passed to
-# this script are simply passed on to galileo-node processes on the cluster.
+# This is a basic convenience script that will SSH to the machines in the
+# cluster and execute galileo-node on them with any relevant command line
+# options.
 ################################################################################
 
 colorize=""
+node_opts=""
 ssh_opts=""
 if [[ -n "${GALILEO_SSH_OPTS}" ]]; then
     ssh_opts="${GALILEO_SSH_OPTS}"
@@ -23,21 +25,25 @@ Commands:
     status - print the current status of the cluster
 
 Options:
-    -c colorize output
-    -f forceful shutdown (SIGKILL)
+    -c             colorize output
+    -f             forceful shutdown (SIGKILL)
+    -u username    Use a specific username for SSH
 
 The GALILEO_SSH_OPTS environment variable adds options to the ssh command line
 for non-standard ssh configurations.
 EOM
 }
 
-while getopts "cf" flag; do
+while getopts "cfu:" flag; do
     case ${flag} in
-        c) colorize="-c" ;;
-        f) ;;
+        c) colorize="-c" node_opts="${node_opts} -c" ;;
+        f) node_opts="${node_opts} -f" ;;
+        u) ssh_opts="${ssh_opts} -l${OPTARG}" ;;
         ?) print_usage; exit 1;
     esac
 done
+
+shift $(($OPTIND - 1))
 
 source "$(cd "$(dirname "$0")" && pwd)/galileo-environment"
 
@@ -49,9 +55,10 @@ if [[ $? -ne 0 ]]; then
 fi
 
 for group in ${groups}; do
-    # Remove whitespace, empty lines, and everything after the colon character
-    sed 's/[\t ]//g; /^$/d; s/\(.*\):.*/\1/g' "${group}" | \
+    # Remove comments, whitespace, empty lines, and everything after the colon
+    # character (used to specify communication ports)
+    sed 's/[\t ]//g; s/^#.*//g; /^$/d; s/\(.*\):.*/\1/g' "${group}" | \
         "${GALILEO_HOME}"/bin/dssh -pq ${colorize} -o "${ssh_opts}" \
-        '${GALILEO_HOME}/bin/galileo-node '"${@}" &
+        '${GALILEO_HOME}/bin/galileo-node '"${node_opts} ${@}" &
 done
 wait

@@ -18,7 +18,6 @@
             value="${lib}/${ant.project.name}-${project.version}.jar"/>
     <property file="build.properties"/>
 
-
     <path id="classpath">
         <fileset dir="." includes="lib/*.jar"/>
     </path>
@@ -71,12 +70,16 @@
                         value="${project.version}"/>
                 <attribute name="Specification-URL"
                         value="${project.url}"/>
-                <attribute name="Class-Path" value="${jar.classpath}"/>
             </manifest>
         </jar>
     </target>
 
-    <target name="javadoc" description="Generates javadoc" depends="compile">
+    <target name="javadoc" description="Generates javadoc">
+        <antcall target="compile">
+            <param name="build.tests" value="false"/>
+            <param name="build.samples" value="false"/>
+        </antcall>
+ 
         <mkdir dir="${docs}"/>
 
         <property name="doctitle"
@@ -84,7 +87,7 @@
 
         <javadoc sourcepath="${src}"
                 destdir="${docs}"
-                classpath="${classpath}"
+                classpathref="classpath"
                 doctitle="${doctitle}"
                 windowtitle="${doctitle}"/>
     </target>
@@ -95,6 +98,7 @@
             <formatter type="plain" usefile="false"/>
             <test name="galileo.test.dataset.feature.TestSuite"/>
             <test name="galileo.test.dht.partitioning.TestSuite"/>
+            <test name="galileo.test.graph.TestSuite"/>
         </junit>
     </target>
 

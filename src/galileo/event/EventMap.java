@@ -1,5 +1,5 @@
 /*
-Copyright (c) 2013, Colorado State University
+Copyright (c) 2014, Colorado State University
 All rights reserved.
 
 Redistribution and use in source and binary forms, with or without modification,
@@ -23,26 +23,36 @@ any theory of liability, whether in contract, strict liability, or tort
 software, even if advised of the possibility of such damage.
 */
 
-package galileo.dht;
+package galileo.event;
 
-import java.io.IOException;
+import java.util.HashMap;
+import java.util.Map;
 
-import galileo.serialization.SerializableArray;
-import galileo.serialization.SerializationException;
-import galileo.serialization.SerializationInputStream;
+/**
+ * Provides a base implementation for mapping event identifiers to classes, and
+ * classes back to event identifiers.
+ *
+ * @author malensek
+ */
+public abstract class EventMap {
 
-public class NodeArray extends SerializableArray<NodeInfo> {
+    protected final Map<Integer, Class<? extends Event>>
+        intToClass = new HashMap<>();
+    protected final Map<Class<? extends Event>, Integer>
+        classToInt = new HashMap<>();
 
-    static final long serialVersionUID = -7342648468294545935L;
+    public EventMap() { }
 
-    public NodeArray() { }
+    protected void addMapping(int id, Class<? extends Event> clazz) {
+        intToClass.put(id, clazz);
+        classToInt.put(clazz, id);
+    }
 
-    public NodeArray(SerializationInputStream in)
-    throws IOException, SerializationException {
-        int size = in.readInt();
-        for (int i = 0; i < size; ++i) {
-            NodeInfo node = new NodeInfo(in);
-            add(node);
-        }
+    public Class<? extends Event> getClass(int id) {
+        return intToClass.get(id);
+    }
+
+    public int getInt(Class<?> clazz) {
+        return classToInt.get(clazz);
     }
 }

@@ -240,7 +240,11 @@ public class GeoHash {
             }
         }
 
+        if (latitude) {
+            return new float[] { high, low };
+        } else {
         return new float[] { low, high };
+        }
     }
 
     /**

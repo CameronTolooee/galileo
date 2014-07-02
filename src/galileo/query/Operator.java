@@ -44,7 +44,8 @@ public enum Operator {
 
     /**
      * String representation of the operators.  Note that the array index
-     * corresponds to the operator index.
+     * corresponds to the operator index.  '=' and '/=' for equal and not equal,
+     * respectively, are also allowed (see the strToOp Map).
      */
     private static final String[] opStrings = {
         "??", // UNKNOWN(0)
@@ -89,6 +90,9 @@ public enum Operator {
         for (Operator o : Operator.values()) {
             strToOp.put(opStrings[o.toInt()], o);
         }
+
+        strToOp.put("=", EQUAL);
+        strToOp.put("/=", NOTEQUAL);
     }
 
     public static Operator fromString(String s) {

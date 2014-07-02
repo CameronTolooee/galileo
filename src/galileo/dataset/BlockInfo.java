@@ -23,10 +23,9 @@ any theory of liability, whether in contract, strict liability, or tort
 software, even if advised of the possibility of such damage.
 */
 
-package galileo.util;
+package galileo.dataset;
 
 import galileo.dataset.Block;
-
 import galileo.dataset.Metadata;
 import galileo.serialization.SerializationException;
 import galileo.serialization.Serializer;

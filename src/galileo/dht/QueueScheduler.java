@@ -35,7 +35,7 @@ import java.util.concurrent.Executors;
  * @author malensek
  */
 public class QueueScheduler implements Scheduler {
-    ExecutorService executor;
+    private ExecutorService executor;
 
     public QueueScheduler(int numThreads) {
         executor = Executors.newFixedThreadPool(numThreads);

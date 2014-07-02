@@ -26,10 +26,7 @@ software, even if advised of the possibility of such damage.
 package galileo.dht;
 
 import java.io.IOException;
-import java.io.OutputStream;
-import java.net.Socket;
 import java.nio.channels.SelectionKey;
-
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -80,7 +77,7 @@ public abstract class EventHandler implements ProcessingUnit {
     protected void publishResponse(GalileoEvent event)
     throws IOException {
         GalileoMessage response = EventPublisher.wrapEvent(event);
-        router.sendMessage(message.getSelectionKey(), response);
+        message.getContext().sendMessage(response);
     }
 
     /**
@@ -89,14 +86,13 @@ public abstract class EventHandler implements ProcessingUnit {
     protected void publishEvent(GalileoEvent event, NodeInfo destination)
     throws IOException {
         GalileoMessage message = EventPublisher.wrapEvent(event);
-        connectionPool.connectTo(destination);
         connectionPool.sendMessage(destination, message);
     }
 
     /**
      * Publishes an event to the specified SelectionKey.
      */
-    protected void publishEvent(GalileoEvent event, SelectionKey key)
+    protected void publishEvent(SelectionKey key, GalileoEvent event)
     throws IOException {
         router.sendMessage(key, EventPublisher.wrapEvent(event));
     }
@@ -104,7 +100,7 @@ public abstract class EventHandler implements ProcessingUnit {
     /**
      * Sends a message on the specified SelectionKey.
      */
-    protected void sendMessage(GalileoMessage message, SelectionKey key)
+    protected void sendMessage(SelectionKey key, GalileoMessage message)
     throws IOException {
         router.sendMessage(key, message);
     }

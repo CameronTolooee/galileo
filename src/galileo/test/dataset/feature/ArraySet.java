@@ -26,9 +26,9 @@ software, even if advised of the possibility of such damage.
 package galileo.test.dataset.feature;
 
 import static org.junit.Assert.*;
+
 import galileo.dataset.feature.Feature;
 import galileo.dataset.feature.FeatureArray;
-
 import galileo.dataset.feature.FeatureArraySet;
 import galileo.dataset.feature.FeatureType;
 import galileo.serialization.Serializer;

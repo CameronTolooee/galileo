@@ -27,6 +27,8 @@ package galileo.dht;
 
 import java.io.File;
 import java.io.IOException;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.logging.Level;
 import java.util.logging.Logger;
@@ -51,6 +53,7 @@ import galileo.net.ClientConnectionPool;
 import galileo.net.GalileoMessage;
 import galileo.net.HostIdentifier;
 import galileo.net.MessageListener;
+import galileo.net.NetworkDestination;
 import galileo.net.PortTester;
 import galileo.net.ServerMessageRouter;
 import galileo.serialization.Serializer;
@@ -70,6 +73,10 @@ public class StorageNode implements MessageListener {
     private StatusLine nodeStatus;
 
     private int port;
+    private String rootDir;
+
+    private File pidFile;
+
     private int threads = 1;
 
     private NetworkInfo network;
@@ -86,10 +93,17 @@ public class StorageNode implements MessageListener {
 
     private String sessionId;
 
-    public StorageNode(int port) {
-        this.port = port;
+    public StorageNode() {
+        this.port = NetworkConfig.DEFAULT_PORT;
+        this.rootDir = SystemConfig.getRootDir();
+
         this.sessionId = HostIdentifier.getSessionId(port);
         nodeStatus = new StatusLine(SystemConfig.getRootDir() + "/status.txt");
+
+        String pid = System.getProperty("pidFile");
+        if (pid != null) {
+            this.pidFile = new File(pid);
+        }
     }
 
     /**
@@ -118,8 +132,7 @@ public class StorageNode implements MessageListener {
         /* Set up the FileSystem. */
         nodeStatus.set("Initializing file system");
         try {
-            fs = new GeospatialFileSystem(SystemConfig.getRootDir());
-            //fs.recoverMetadata();
+            fs = new GeospatialFileSystem(rootDir);
         } catch (FileSystemException e) {
             nodeStatus.set("File system initialization failure");
             logger.log(Level.SEVERE,
@@ -141,9 +154,9 @@ public class StorageNode implements MessageListener {
         scheduler = new QueueScheduler(threads);
 
         /* Start listening for incoming messages. */
-        messageRouter = new ServerMessageRouter(port);
+        messageRouter = new ServerMessageRouter();
         messageRouter.addListener(this);
-        messageRouter.listen();
+        messageRouter.listen(port);
         nodeStatus.set("Online");
     }
 
@@ -160,6 +173,12 @@ public class StorageNode implements MessageListener {
 
         partitioner = new SpatialHierarchyPartitioner(this, network, geohashes);
     }
+
+    @Override
+    public void onConnect(NetworkDestination endpoint) { }
+
+    @Override
+    public void onDisconnect(NetworkDestination endpoint) { }
 
     @Override
     public void onMessage(GalileoMessage message) {
@@ -250,11 +269,12 @@ public class StorageNode implements MessageListener {
 
             /* Determine StorageNodes that contain relevant data. */
             //featureGraph.query(
-            NodeArray queryNodes = new NodeArray();
+            List<NodeInfo> queryNodes = new ArrayList<>();
             queryNodes.addAll(network.getAllNodes());
 
             /* Set up QueryTracker for this request */
-            QueryTracker tracker = new QueryTracker(message.getSelectionKey());
+            QueryTracker tracker = new QueryTracker(
+                    message.getContext().getSelectionKey());
             String clientId = tracker.getIdString(sessionId);
             queryTrackers.put(clientId, tracker);
 
@@ -288,8 +308,10 @@ public class StorageNode implements MessageListener {
         @Override
         public void handleEvent() throws Exception {
             QueryEvent query = deserializeEvent(QueryEvent.class);
+            logger.info(query.getQuery().toString());
 
-            MetadataGraph results = fs.query(query.getQuery());
+            MetadataGraph results = MetadataGraph.fromPaths(
+                    fs.query(query.getQuery()));
             logger.info("Got " + results.numVertices() + "results");
             QueryResponse response
                 = new QueryResponse(query.getQueryId(), results);
@@ -308,7 +330,7 @@ public class StorageNode implements MessageListener {
                         response.getId());
                 return;
             }
-            sendMessage(message, tracker.getSelectionKey());
+            sendMessage(tracker.getSelectionKey(), message);
         }
     }
 
@@ -321,19 +343,22 @@ public class StorageNode implements MessageListener {
             /* The logging subsystem may have already shut down, so we revert to
              * stdout for our final messages */
             System.out.println("Initiated shutdown.");
-            fs.shutdown();
 
-            /* Close out the status line (remove it) */
+            try {
+                connectionPool.forceShutdown();
+                messageRouter.shutdown();
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
+
             nodeStatus.close();
 
-            /* Remove the pid file, if it exists. */
-            String pidFile = System.getProperty("pidFile");
-            if (pidFile != null) {
-                File pid = new File(pidFile);
-                if (pid.exists()) {
-                    pid.delete();
+            if (pidFile != null && pidFile.exists()) {
+                pidFile.delete();
                 }
-            }
+
+            fs.shutdown();
+
             System.out.println("Goodbye!");
         }
     }
@@ -342,8 +367,7 @@ public class StorageNode implements MessageListener {
      * Executable entrypoint for a Galileo DHT Storage Node
      */
     public static void main(String[] args) {
-        int port = NetworkConfig.DEFAULT_PORT;
-        StorageNode node = new StorageNode(port);
+        StorageNode node = new StorageNode();
         try {
             node.start();
         } catch (Exception e) {

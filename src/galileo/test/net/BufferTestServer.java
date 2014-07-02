@@ -26,15 +26,24 @@ software, even if advised of the possibility of such damage.
 package galileo.test.net;
 
 import java.io.IOException;
+
 import java.util.Random;
 
 import galileo.net.GalileoMessage;
 import galileo.net.MessageListener;
+import galileo.net.NetworkDestination;
 import galileo.net.ServerMessageRouter;
 
+/**
+ * Receives incoming messages from clients and increments a message counter.
+ * Each time a client disconnects, the total number of messages received is
+ * reported.
+ *
+ * @author malensek
+ */
 public class BufferTestServer implements MessageListener {
 
-    private static final int PORT = 5050;
+    protected static final int PORT = 5050;
 
     private int counter;
     private ServerMessageRouter messageRouter;
@@ -42,18 +51,28 @@ public class BufferTestServer implements MessageListener {
 
     public void listen()
     throws IOException {
-        messageRouter = new ServerMessageRouter(PORT);
+        messageRouter = new ServerMessageRouter();
         messageRouter.addListener(this);
-        messageRouter.listen();
+        messageRouter.listen(PORT);
         System.out.println("Listening...");
+    }
+
+    @Override
+    public void onConnect(NetworkDestination endpoint) {
+        System.out.println("Accepting connection from " + endpoint);
+    }
+
+    @Override
+    public void onDisconnect(NetworkDestination endpoint) {
+        System.out.println("Client disconnect: " + endpoint);
+        System.out.println("Number of messages received so far: " + counter);
     }
 
     @Override
     public void onMessage(GalileoMessage message) {
         counter++;
-        System.out.println(counter);
         try {
-            Thread.sleep(random.nextInt(10));
+            Thread.sleep(random.nextInt(5));
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             System.out.println("Thread interrupted!");

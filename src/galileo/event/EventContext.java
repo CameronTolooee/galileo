@@ -23,40 +23,43 @@ any theory of liability, whether in contract, strict liability, or tort
 software, even if advised of the possibility of such damage.
 */
 
-package galileo.dataset;
+package galileo.event;
 
-import java.util.Collection;
+import java.io.IOException;
 
-import galileo.serialization.ByteSerializable;
+import galileo.net.GalileoMessage;
+import galileo.net.NetworkDestination;
 
-/**
- * Defines a very basic map that consists of Key, Value pairs wherein the Key
- * can be ascertained by the Value directly.
- *
- * @author malensek
- */
-public interface SimpleMap<K, V extends ByteSerializable> {
+public class EventContext {
 
-    /**
-     * Places an item in this data structure.
-     */
-    public void put(V item);
+    private GalileoMessage message;
+    private EventWrapper wrapper;
+
+    public EventContext(GalileoMessage message, EventWrapper wrapper) {
+        this.message = message;
+        this.wrapper = wrapper;
+    }
 
     /**
-     * Retrieves an item from this data structure.
-     *
-     * @param key Key of the item to retrieve; for instance, the item's name.
+     * Send a reply back to the source that created the original event.
      */
-    public V get(K key);
-
-
-    /**
-     * Retrieves all the values contained in this data structure.
-     */
-    public Collection<V> values();
+    public void sendReply(Event e)
+    throws IOException {
+        GalileoMessage m = wrapper.wrap(e);
+        this.message.getContext().sendMessage(m);
+    }
 
     /**
-     * Reports the current size of the data structure.
+     * @return Server port number that this event was sent to.
      */
-    public int size();
+    public int getServerPort() {
+        return message.getContext().getServerPort();
+    }
+
+    /**
+     * @return NetworkDestination of the client that generated the event.
+     */
+    public NetworkDestination getSource() {
+        return message.getContext().getSource();
+    }
 }

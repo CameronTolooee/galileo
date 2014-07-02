@@ -25,15 +25,10 @@ software, even if advised of the possibility of such damage.
 
 package galileo.serialization;
 
-import galileo.dataset.SimpleMap;
-import galileo.serialization.ByteSerializable.Deserialize;
-import galileo.util.StackTraceToString;
-
 import java.io.ByteArrayOutputStream;
 import java.io.DataInputStream;
 import java.io.IOException;
 import java.io.InputStream;
-import java.lang.reflect.Constructor;
 import java.util.Collection;
 import java.util.zip.GZIPInputStream;
 

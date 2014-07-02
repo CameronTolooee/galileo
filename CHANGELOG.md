@@ -1,3 +1,26 @@
+**1.0 : 2014/06/12 ---- First stable release**
+- More updates to the net framework
+- Additional samples for networking: events, synopsis, basic echo server
+
+**0.9 : 2014/05/14 ---- Network subsystem improvements**
+- Includes several new network tests
+- c10k benchmarks: ~50,000 simultaneous client connections on our test hardware
+- ClientMessageRouter thread safety
+- event and net package improvements
+
+**0.8 : 2014/05/08 ---- Event handling subsystem updates**
+- Implementation of the reactor pattern for event handling
+- Automatic annotation-based event mapping
+- Usability improvements to the net subsystem
+- Began migrating away from use of SelectionKeys in client code
+
+**0.7 : 2014/04/08 ---- Geoavailability Grids, stability improvements**
+- Added Geoavailability Grid implementation: spatial queries
+- Refactored FileSystem implementation
+- Improved Metadata journaling
+- Many more samples and tests
+- Fixed a critical network queueing bug
+
 **0.6 : 2014/01/15 ---- Stable Data Model**
 - galileo.dataset.feature complete beta implementation
 - Networking improvements
@@ -34,5 +57,4 @@
 
 
 **0.1 : 2011/06/26 ---- Initial DHT implementation.**
-- Pub: Matthew Malensek, Sangmi Pallickara, and Shrideep Pallickara.
-  Galileo: A Framework for Distributed Storage of High-Throughput Data Streams.
+- Initial functionality

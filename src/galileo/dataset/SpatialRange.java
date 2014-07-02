@@ -30,6 +30,7 @@ import java.io.IOException;
 import galileo.serialization.ByteSerializable;
 import galileo.serialization.SerializationInputStream;
 import galileo.serialization.SerializationOutputStream;
+import galileo.util.Pair;
 
 public class SpatialRange implements ByteSerializable {
     private float upperLat;
@@ -64,20 +65,43 @@ public class SpatialRange implements ByteSerializable {
         this.lowerElevation = lowerElevation;
     }
 
-    public float getUpperBoundForLatitude() {
-        return upperLat;
+    public SpatialRange(SpatialRange copyFrom) {
+        this.lowerLat = copyFrom.lowerLat;
+        this.upperLat = copyFrom.upperLat;
+        this.lowerLon = copyFrom.lowerLon;
+        this.upperLon = copyFrom.upperLon;
+
+        this.hasElevation = copyFrom.hasElevation;
+        this.upperElevation = copyFrom.upperElevation;
+        this.lowerElevation = copyFrom.lowerElevation;
     }
 
+    /*
+     * Retrieves the smallest latitude value of this spatial range going east.
+     */
     public float getLowerBoundForLatitude() {
         return lowerLat;
     }
 
-    public float getUpperBoundForLongitude() {
-        return upperLon;
+    /*
+     * Retrieves the largest latitude value of this spatial range going east.
+     */
+    public float getUpperBoundForLatitude() {
+        return upperLat;
     }
 
+    /*
+     * Retrieves the smallest longitude value of this spatial range going south.
+     */
     public float getLowerBoundForLongitude() {
         return lowerLon;
+    }
+
+    /*
+     * Retrieves the largest longitude value of this spatial range going south.
+     */
+    public float getUpperBoundForLongitude() {
+        return upperLon;
     }
 
     public Coordinates getCenterPoint() {
@@ -89,6 +113,25 @@ public class SpatialRange implements ByteSerializable {
 
         return new Coordinates(lowerLat + latDistance,
                                lowerLon + lonDistance);
+    }
+
+    /**
+     * Using the upper and lower boundaries for this spatial range, generate
+     * two lat, lon points that represent the upper-left and lower-right
+     * coordinates of the range.  Note that this method does not account for the
+     * curvature of the earth (aka the Earth is flat).
+     *
+     * @return a Pair of Coordinates, with the upper-left and lower-right
+     * points of this spatial range.
+     */
+    public Pair<Coordinates, Coordinates> get2DCoordinates() {
+        return new Pair<>(
+                new Coordinates(
+                    this.getLowerBoundForLatitude(),
+                    this.getLowerBoundForLongitude()),
+                new Coordinates(
+                    this.getUpperBoundForLatitude(),
+                    this.getUpperBoundForLongitude()));
     }
 
     public boolean hasElevationBounds() {
@@ -105,8 +148,8 @@ public class SpatialRange implements ByteSerializable {
 
     @Override
     public String toString() {
-        return "(" + lowerLat + ", " + lowerLon
-            + "), (" + upperLat + ", " + upperLon + ")";
+        Pair<Coordinates, Coordinates> p = get2DCoordinates();
+        return "[" + p.a + ", " + p.b + "]";
     }
 
     @Deserialize
