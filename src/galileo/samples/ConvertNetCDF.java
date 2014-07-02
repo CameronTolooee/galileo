@@ -143,7 +143,10 @@ public class ConvertNetCDF {
         addIndexField("snow_depth", meta, m);
         m.setTemporalProperties(meta.getTemporalProperties());
         m.setSpatialProperties(meta.getSpatialProperties());
-        Block block = new Block(m, Serializer.serialize(meta));
+        //Block block = new Block(m, Serializer.serialize(meta));
+        /* FOR INDEXING ONLY */
+        byte[] b = new byte[0];
+        Block block = new Block(m, b);
         return block;
     }
 
@@ -262,11 +265,21 @@ public class ConvertNetCDF {
          * reading at each grid point. */
         NetcdfDataset dataset = new NetcdfDataset(n);
         GridDataset gridData = new GridDataset(dataset);
+        ArrayList<String> names = new ArrayList<String>();
+        names.add("visibility");
+        names.add("Pressure_surface");
+        names.add("total_precipitation");
+        names.add("precipitable_water");
+        names.add("Temperature_surface");
+        names.add("total_cloud_cover");
+        names.add("snow_depth");
+        
         for (GridDatatype g : gridData.getGrids()) {
             /* Let's look at 3D variables: these have WxH dimensions, plus a
              * single plane.  A 4D variable would contain elevation
              * and multiple planes as a result */
-            if (g.getShape().length == 3) {
+            System.out.println(g.getFullName());            
+            if (names.contains(g.getFullName()) && g.getShape().length == 3) {
                 convert3DVariable(g, calendar.getTime(), metaMap);
             }
         }

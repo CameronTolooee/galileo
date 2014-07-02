@@ -33,6 +33,10 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
+import galileo.comm.CacheRecall;
+import galileo.comm.CachedQueryEvent;
+import galileo.comm.ElectionEvent;
+import galileo.comm.ElectionResponse;
 import galileo.comm.QueryEvent;
 import galileo.comm.QueryPreamble;
 import galileo.comm.QueryRequest;
@@ -42,10 +46,12 @@ import galileo.comm.StorageRequest;
 import galileo.config.SystemConfig;
 import galileo.dataset.Block;
 import galileo.dataset.Metadata;
+import galileo.dht.cache.CachedQueryTracker;
 import galileo.dht.hash.HashException;
 import galileo.dht.hash.HashTopologyException;
 import galileo.event.EventContainer;
 import galileo.event.EventType;
+import galileo.event.GalileoEvent;
 import galileo.fs.FileSystemException;
 import galileo.fs.GeospatialFileSystem;
 import galileo.graph.MetadataGraph;
@@ -85,6 +91,7 @@ public class StorageNode implements MessageListener {
     private ClientConnectionPool connectionPool;
     private Scheduler scheduler;
     private GeospatialFileSystem fs;
+    private CachedQueryTracker cqTracker;
 
     private Partitioner<Metadata> partitioner;
 
@@ -99,7 +106,7 @@ public class StorageNode implements MessageListener {
 
         this.sessionId = HostIdentifier.getSessionId(port);
         nodeStatus = new StatusLine(SystemConfig.getRootDir() + "/status.txt");
-
+        cqTracker = new CachedQueryTracker();
         String pid = System.getProperty("pidFile");
         if (pid != null) {
             this.pidFile = new File(pid);
@@ -216,12 +223,74 @@ public class StorageNode implements MessageListener {
         logger.log(Level.INFO, "Processing event type: {0}", type);
 
         switch (type) {
-            case STORAGE: return new storageHandler();
-            case STORAGE_REQUEST: return new storageRequestHandler();
-            case QUERY: return new queryHandler();
-            case QUERY_REQUEST: return new queryRequestHandler();
-            case QUERY_RESPONSE: return new queryResponseHandler();
-            default: return null;
+        case STORAGE:
+            return new storageHandler();
+        case STORAGE_REQUEST:
+            return new storageRequestHandler();
+        case QUERY:
+            return new queryHandler();
+        case QUERY_REQUEST:
+            return new queryRequestHandler();
+        case QUERY_RESPONSE:
+            return new queryResponseHandler();
+        case CACHED_QUERY:
+            return new cachedQueryHandler();
+        case ELECTION:
+            return new electionEventHandler();
+        case ELECTION_RESPONSE:
+            return new electionResponseHandler();
+        case CACHE_RECALL:
+            return new cacheRecallHandler();
+        default:
+            return null;
+        }
+    }
+
+    private class cacheRecallHandler extends EventHandler {
+
+        @Override
+        public void handleEvent() throws Exception {
+            CacheRecall event = deserializeEvent(CacheRecall.class);
+            String qid = event.getQID();
+            QueryResponse response = new QueryResponse(qid,
+                    cqTracker.getMetadata(qid));
+            publishResponse(response);
+        }
+    }
+
+    private class electionResponseHandler extends EventHandler {
+
+        @Override
+        public void handleEvent() throws Exception {
+            ElectionResponse response = deserializeEvent(ElectionResponse.class);
+            cqTracker.updateGroupInfo(response);
+        }
+    }
+
+    private class electionEventHandler extends EventHandler {
+
+        @Override
+        public void handleEvent() throws Exception {
+            ElectionEvent event = deserializeEvent(ElectionEvent.class);
+            logger.info(event.toString());
+            long freeMem = Runtime.getRuntime().freeMemory();
+            long totalMem = Runtime.getRuntime().maxMemory();
+            NodeInfo me = new NodeInfo(
+                    InetAddress.getLocalHost().getHostName(), port);
+            ElectionResponse response = new ElectionResponse(freeMem, totalMem,
+                    me);
+            publishEvent(response, event.respondTo());
+        }
+    }
+
+    private class cachedQueryHandler extends EventHandler {
+
+        @Override
+        public void handleEvent() throws Exception {
+            CachedQueryEvent event = deserializeEvent(CachedQueryEvent.class);
+            logger.info(event.toString());
+            /* Add cached query entry to tracker */
+            cqTracker.sumbitQuery(event, messageRouter);
         }
     }
 

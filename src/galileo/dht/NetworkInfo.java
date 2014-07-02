@@ -27,6 +27,7 @@ package galileo.dht;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Random;
 
 /**
  * Describes a Galileo network layout.
@@ -43,6 +44,12 @@ public class NetworkInfo {
 
     public List<GroupInfo> getGroups() {
         return groups;
+    }
+    
+    public NodeInfo getRandomNode(){
+        Random r = new Random(System.currentTimeMillis());
+        List<NodeInfo> nodes = getAllNodes();
+        return nodes.get(r.nextInt(nodes.size()));
     }
 
     public List<NodeInfo> getAllNodes() {

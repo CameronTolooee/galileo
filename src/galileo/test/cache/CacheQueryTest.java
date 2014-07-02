@@ -21,16 +21,13 @@ loss of use, data, or profits; or business interruption) however caused and on
 any theory of liability, whether in contract, strict liability, or tort
 (including negligence or otherwise) arising in any way out of the use of this
 software, even if advised of the possibility of such damage.
-*/
+ */
 
-package galileo.client;
+package galileo.test.cache;
 
-import java.io.IOException;
-
-import java.net.UnknownHostException;
-import java.util.Calendar;
-import java.util.Random;
-
+import galileo.client.EventPublisher;
+import galileo.comm.CacheRecall;
+import galileo.comm.CachedQueryEvent;
 import galileo.comm.Disconnection;
 import galileo.comm.QueryRequest;
 import galileo.comm.QueryResponse;
@@ -47,18 +44,25 @@ import galileo.net.ClientMessageRouter;
 import galileo.net.GalileoMessage;
 import galileo.net.MessageListener;
 import galileo.net.NetworkDestination;
+import galileo.query.Expression;
+import galileo.query.Operation;
 import galileo.query.Query;
 import galileo.serialization.Serializer;
 import galileo.util.GeoHash;
 
-public class TextClient implements MessageListener {
+import java.io.IOException;
+import java.net.UnknownHostException;
+import java.util.Calendar;
+import java.util.Random;
+
+public class CacheQueryTest implements MessageListener {
 
     private static Random randomGenerator = new Random(System.nanoTime());
 
     private ClientMessageRouter messageRouter;
     private EventPublisher publisher;
-
-    public TextClient() throws IOException {
+    public long timer;
+    public CacheQueryTest() throws IOException {
         messageRouter = new ClientMessageRouter();
         publisher = new EventPublisher(messageRouter);
 
@@ -66,7 +70,7 @@ public class TextClient implements MessageListener {
     }
 
     public NetworkDestination connect(String hostname, int port)
-    throws UnknownHostException, IOException {
+            throws UnknownHostException, IOException {
         return messageRouter.connectTo(hostname, port);
     }
 
@@ -89,8 +93,9 @@ public class TextClient implements MessageListener {
             if (container.getEventType() == EventType.QUERY_RESPONSE) {
                 QueryResponse response = Serializer.deserialize(
                         QueryResponse.class, container.getEventPayload());
-
-                System.out.println(response.getMetadata());
+                /* just print out the graph to check accuracy */
+                System.out.println(System.nanoTime()-timer);
+                System.out.println("size: "+response.getMetadata().numVertices());
             }
 
             if (container.getEventType() == EventType.DISCONNECT) {
@@ -106,15 +111,25 @@ public class TextClient implements MessageListener {
     }
 
     public void store(NetworkDestination destination, Block fb)
-    throws Exception {
+            throws Exception {
         StorageRequest store = new StorageRequest(fb);
         publisher.publish(destination, store);
     }
 
+    public void query(NetworkDestination destination, CachedQueryEvent query)
+            throws IOException {
+        publisher.publish(destination, query);
+    }
+    
     public void query(NetworkDestination destination, Query query)
-    throws IOException {
-        QueryRequest queryReq = new QueryRequest(query);
-        publisher.publish(destination, queryReq);
+            throws IOException {
+        QueryRequest qr = new QueryRequest(query);
+        publisher.publish(destination, qr);
+    }
+
+    public void recall(CacheRecall recall, NetworkDestination destination)
+            throws IOException {
+        publisher.publish(destination, recall);
     }
 
     public static int randomInt(int start, int end) {
@@ -136,20 +151,20 @@ public class TextClient implements MessageListener {
 
         calendar.set(year, month, day);
 
-        /* Convert the random values to a start time, then add 1ms for the end
-         * time.  This simulates 1ms worth of data. */
+        /*
+         * Convert the random values to a start time, then add 1ms for the end
+         * time. This simulates 1ms worth of data.
+         */
         long startTime = calendar.getTimeInMillis();
-        long endTime   = startTime + 1;
+        long endTime = startTime + 1;
 
-        TemporalProperties temporalProperties
-            = new TemporalProperties(startTime, endTime);
-
+        TemporalProperties temporalProperties = new TemporalProperties(
+                startTime, endTime);
 
         /* The continental US */
-        String[] geoRand = { "c2", "c8", "cb", "f0", "f2",
-                             "9r", "9x", "9z", "dp", "dr",
-                             "9q", "9w", "9y", "dn", "dq",
-                             "9m", "9t", "9v", "dj" };
+        String[] geoRand = { "c2", "c8", "cb", "f0", "f2", "9r", "9x", "9z",
+                "dp", "dr", "9q", "9w", "9y", "dn", "dq", "9m", "9t", "9v",
+                "dj" };
 
         String geoPre = geoRand[randomInt(0, geoRand.length - 1)];
         String hash = geoPre;
@@ -159,17 +174,20 @@ public class TextClient implements MessageListener {
             hash += GeoHash.charMap[random];
         }
 
-        SpatialProperties spatialProperties
-            = new SpatialProperties(GeoHash.decodeHash(hash));
+        SpatialProperties spatialProperties = new SpatialProperties(
+                GeoHash.decodeHash(hash));
 
         String[] featSet = { "wind_speed", "wind_direction", "condensation",
-                             "temperature", "humidity" };
+                "temperature", "humidity" };
 
         FeatureSet features = new FeatureSet();
         for (int i = 0; i < 5; ++i) {
             String featureName = featSet[randomInt(0, featSet.length - 1)];
             features.put(new Feature(featureName, randomFloat() * 100));
         }
+
+        /* Add a hard-coded constant to make querying easy */
+        features.put(new Feature("test", 50f));
 
         Metadata metadata = new Metadata();
         metadata.setTemporalProperties(temporalProperties);
@@ -182,34 +200,45 @@ public class TextClient implements MessageListener {
         r.nextBytes(blockData);
 
         Block b = new Block(metadata, blockData);
-
         return b;
     }
 
-    public static void main(String[] args)
-    throws Exception {
+    public static void main(String[] args) throws Exception {
         if (args.length != 2) {
-            System.out.println("Usage: galileo.client.TextClient " +
-                    "<server-hostname> <server-port> ");
+            System.out.println("Usage: galileo.client.CacheQueryTest "
+                    + "<server-hostname> <server-port> ");
             return;
         }
 
         String serverHostName = args[0];
         int serverPort = Integer.parseInt(args[1]);
-
-        TextClient client = new TextClient();
+        CacheQueryTest client = new CacheQueryTest();
         NetworkDestination server = client.connect(serverHostName, serverPort);
-        System.out.println("sending");
 
-        System.out.println("sending");
-        ProgressBar pb = new ProgressBar(1000000000, "Upload");
-        for(int i = 0; i < 1000000000; ++i) {
-            pb.setVal(i);
+        /* Generate random block of data and store it */
         Block block = client.generateData();
-        client.store(server, block);
-        }
+        //client.store(server, block);
+
+        /* Create query to be cached (on hard-coded value test=50) */
+        Query query = new Query();
+        query.addOperation(new Operation(new Expression("!=", new Feature(
+                "temperature_surface", 0f))));
+       // CachedQueryEvent cqe = new CachedQueryEvent("ID_1", 10, 3, query);
         
-        /* See galileo.test.graph.QueryTest for query example */
         
+        client.timer = System.nanoTime();
+        client.query(server,query);
+        /* publish cached query (expires after 10 seconds) */
+       // client.query(server, cqe);
+        
+        /* let the cache query do something */
+       // Thread.sleep(5000);
+
+        /* Recall the cached data */
+       // client.timer = System.nanoTime();
+       // CacheRecall recall = new CacheRecall("ID_1");
+       // client.recall(recall, server);
+       // Thread.sleep(5000);
+       // client.disconnect();
     }
 }
